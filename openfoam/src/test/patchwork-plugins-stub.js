@@ -1,6 +1,6 @@
 // Test stand-in for @inkandswitch/patchwork-plugins (the host provides the
 // real one through the importmap; vitest.config.ts aliases it here). Just
-// enough registry: register / has / get / filter / load / on.
+// enough registry: register / has / get / filter / load / loadWhenReady / on.
 
 const registries = new Map();
 
@@ -27,6 +27,10 @@ function makeRegistry() {
       if (!p) return undefined;
       if (!p.module) p.module = await p.load();
       return p;
+    },
+    async loadWhenReady(id) {
+      while (!plugins.has(id)) await new Promise((r) => listeners.add(function once() { listeners.delete(once); r(); }));
+      return this.load(id);
     },
     on(ev, fn) {
       listeners.add(fn);

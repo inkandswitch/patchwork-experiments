@@ -1,15 +1,16 @@
 // The agent's tools over a fake repo: a GLB model of three parts (a closed
 // box hull, an open cabin above the water, a water plane), a task queue a
 // fake machine says it serves, and the finite cases each tool decides: units, floating, sweeps, the
-// results table, and every refusal.
+// results table, and every refusal. The task client is a stand-in, registered as an installed
+// Tasks package would be.
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "../probes/fake-repo.js";
 import { encodeGLB } from "./glb.js";
 import { boxTriangles } from "./test/box.js";
 import { newRun, CASE_TYPE, RUN_TYPE, RUN_CODE } from "./protocol.js";
-import { setPackageUrl } from "./task-runs.js";
-import { taskState, allHeard } from "./task-rules.js";
+import { installTasks, standInTasks } from "./test/tasks-stand-in.js";
 import { defaultSetup, normalizeSetup, waterProperties, G, KNOT } from "./setup.js";
 import { caseTool, setupTool, runTool, resultsTool, stopTool, setupPatch, STATUS_PATH, MAX_PARTS } from "./agent-tools.js";
 import { AGENT_TOOLS } from "./agent-meta.js";
@@ -46,18 +47,13 @@ const RHO = waterProperties("salt", 15).rho;
 const SESSION = "automerge:session";
 
 const PACKAGE = "automerge:openfoamTestPackage";
-let repo, ctx, hullUrl, server, folder, beating;
-/** A machine serving the queue says so every so often (task-client.js's `served` hears it). */
+let repo, ctx, hullUrl, server, folder, tasks;
+/** A machine serving the queue, as the task client hears it. */
 function serveQueue({ name = "Test machine", slots = 1, busy = 0 } = {}) {
-  let seq = 0;
-  const beat = () => server.hear({ type: "serving", pool: "pool-1", name, slots, busy, from: "test-pool", seq: seq++ });
-  beat();
-  clearInterval(beating);
-  beating = setInterval(beat, 50);
+  tasks.pools = [{ name, slots, busy }];
 }
-afterEach(() => clearInterval(beating));
 beforeEach(() => {
-  setPackageUrl(PACKAGE);
+  tasks = installTasks(standInTasks({ packageUrl: PACKAGE }));
   repo = new FakeRepo();
   // the fake repo records each change's options, to check the messages
   const add = repo.add.bind(repo);
@@ -300,7 +296,7 @@ describe("floating", () => {
     // a box trimmed t about its middle, lowered s: the draft there, measured square to its keel, is 0.5 + s / cos t,
     // so it holds 4 (0.5 + s / cos t) and floats at s = 0.125 cos t
     expect(a.sinkage).toBeCloseTo(0.125 * Math.cos((8 * Math.PI) / 180), 4);
-    const c = await readHull(repo, handle.doc().hull);
+    const c = await readHull(repo, handle.doc().hull, { tasks });
     const at8 = floatAt(c, hullModel(c, handle.doc().hull), { mass, water: "salt", temperature: 15, trim: 8, heel: 0 });
     expect(a.sinkage).toBe(at8.sinkage);
     expect(Math.abs(a.sinkage - 0.125)).toBeGreaterThan(0.001);
@@ -355,13 +351,10 @@ describe("openfoam_run", () => {
     expect(run.hull.source.parts).toEqual(["Hull"]);
     expect(run.hull.geometry.digest).toMatch(/^[0-9a-f]{64}$/);
     expect(handle.doc().runs).toEqual([runUrl]);
-    // asked of the case's queue as a task keyed by the run, naming this package's run code
-    expect(Object.keys(server.doc().jobs)).toEqual([runUrl]);
-    const entry = server.doc().jobs[runUrl];
-    expect(entry.package).toBe(PACKAGE);
-    expect(run.task).toBe(entry.taskUrl);
-    const task = (await repo.find(entry.taskUrl)).doc();
-    expect(task).toMatchObject({ importUrl: `/${encodeURIComponent(PACKAGE)}/${RUN_CODE}`, input: { run: runUrl }, key: runUrl, runs: [] });
+    // asked of the case's queue as a task keyed by the run, naming this package's run code from where the model was loaded
+    expect(tasks.asked).toEqual([{ queueUrl: server.url, importUrl: `/${encodeURIComponent(PACKAGE)}/${RUN_CODE}`, input: { run: runUrl }, key: runUrl }]);
+    expect(tasks.froms.at(-1)).toMatch(/\/src\/case-model\.js$/);
+    expect(run.task).toBe(server.doc().jobs[runUrl].taskUrl);
     expect(STATUS_PATH).toEqual(["status"]);
     expect(r.text).toContain(`doc_watch { url: "${runUrl}", path: ["status"], match: "done|failed|cancelled" }`);
     expect(r.text).toContain('the small field ["status"] of its document');
@@ -396,10 +389,10 @@ describe("openfoam_run", () => {
   });
   it("says when nobody is serving the queue: the runs wait", async () => {
     const { url } = await newCase();
-    clearInterval(beating);
+    tasks.pools = [];
     const r = await runTool.execute({ case: url }, ctx);
     expect(r.text).toMatch(/NOBODY IS SERVING IT — they wait in its queue/);
-  }, 10_000);
+  });
   it("says how many runs are ahead, from the queue and what its machines say they are busy with", async () => {
     const { url } = await newCase();
     await runTool.execute({ case: url, speeds: ["7 kn", "8 kn"] }, ctx);
@@ -410,7 +403,7 @@ describe("openfoam_run", () => {
   });
   it("can't name the run's code outside its package without being told, and asks for nothing", async () => {
     const { url, handle } = await newCase();
-    setPackageUrl(null);
+    tasks.packageUrl = null;
     await expect(runTool.execute({ case: url }, ctx)).rejects.toThrow(/wasn't loaded from its package/);
     expect(handle.doc().runs).toEqual([]);
     expect(server.doc().jobs).toEqual({});
@@ -504,13 +497,9 @@ describe("openfoam_stop", () => {
     expect(t).toContain(`${b.url}: asked to finish now`);
     expect(a.doc().control).toEqual({ finish: false });
     expect(b.doc().control).toEqual({ finish: true });
-    const taskA = await repo.find(a.doc().task);
     expect(await stopTool.execute({ runs: [a.url], keep: false }, ctx)).toMatch(/: cancelled\. If it hadn't started it never will/);
-    // the task has a stop in its list and is off the queue; the run doc isn't written
-    expect(taskA.doc().runs).toHaveLength(1);
-    expect(taskA.doc().runs[0]).toMatchObject({ status: "cancelled" });
-    expect(taskA.doc().runs[0].pool).toBeUndefined();
-    expect(taskState(taskA.doc(), allHeard)).toBe("cancelled");
+    // cancelled through its task, which is off the queue; the run doc isn't written
+    expect(tasks.stops).toEqual([a.url]);
     expect(Object.keys(server.doc().jobs)).toEqual([b.url]);
     expect(a.doc().status).toBe("queued");
     // read from both, it is cancelled: to the results and to stop
@@ -518,6 +507,14 @@ describe("openfoam_stop", () => {
     expect(await stopTool.execute({ runs: [a.url], keep: false }, ctx)).toBe(`${a.url}: already cancelled; nothing to stop.`);
     await expect(stopTool.execute({ runs: [a.url] }, ctx)).rejects.toThrow(/`keep`: true finishes now/);
     await expect(stopTool.execute({ runs: [hullUrl], keep: false }, ctx)).rejects.toThrow(/not an OpenFOAM run/);
+  });
+});
+
+describe("without the Tasks package", () => {
+  it("each tool says so at once, and nothing is made", async () => {
+    getRegistry("patchwork:library").unregister("tasks-next");
+    for (const t of [caseTool, setupTool, runTool, resultsTool, stopTool]) await expect(t.execute({ title: "Box", case: hullUrl, runs: [hullUrl], keep: false }, ctx)).rejects.toThrow("OpenFOAM needs the Tasks package, which is not installed here.");
+    expect(repo.created).toEqual([]);
   });
 });
 

@@ -46,7 +46,7 @@ export async function readVolume(repo, doc, { mesh = true, fields = [], pieces =
     for (const i of at) jobs.push([out.fields[name], i, doc.fields[name][i]]);
   }
   // one file at a time; getBytes fetches a file's segments `parallel` at once
-  for (const [arr, i, v] of jobs) arr[i] = v == null ? null : await getBytes(repo, v, { parallel, ...(find ? { find } : {}) });
+  for (const [arr, i, v] of jobs) arr[i] = v == null ? null : await getBytes(repo, v, { parallel, find });
   return out;
 }
 

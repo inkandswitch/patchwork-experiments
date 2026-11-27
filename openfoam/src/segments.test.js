@@ -129,7 +129,7 @@ describe("serverWatch", () => {
     repo.serverHas(handles[0]);
     // the peer sees what `repo` holds, except the last segment
     const peer = { find: async (u) => (u === handles[2].url ? Promise.reject(new Error("unavailable")) : repo.find(u)) };
-    const checker = freshPeer(() => peer, { tries: 1 });
+    const checker = freshPeer(() => peer, { find: findNow, tries: 1 });
     const r = await watch.wait(handles, { timeoutMs: 80, ackMs: 20, resyncEveryMs: 10, verify: checker.verify });
     expect(r).toEqual({ ok: false, missing: [handles[2].url], verified: 1 });
     expect(watch.has(handles[1])).toBe(true);

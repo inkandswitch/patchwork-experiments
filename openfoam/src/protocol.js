@@ -6,7 +6,7 @@
 // Two documents of this package's own:
 //
 //   openfoam-case    the user's: the hull link, the setup, the server (a
-//                    task queue: see src/task-runs.js), the runs it has made.
+//                    task queue, the Tasks package's), the runs it has made.
 //                    Only people write it.
 //   openfoam-run     one analysis: the setup and hull FROZEN at the moment
 //                    it was asked for, then the run's progress and results.
@@ -21,25 +21,20 @@
 //                        it is asked for)     layers, error, startedAt,
 //                                             finishedAt
 //
-// What this file doesn't say is the kit's (src/task-runs.js): asking for a
-// run, cancelling it (a stop appended to its task, never a write here), the
-// status a person sees (`shownRun`, read from the run doc and its task), and
-// what a stopped or interrupted run writes, which this file adds to.
+// What this file doesn't say is the task client's (the Tasks package's
+// library, `tasks` below): asking for a run, cancelling it (a stop appended
+// to its task, never a write here), the status a person sees (`shownRun`,
+// read from the run doc and its task), which statuses end a run
+// (`isRunEnded`: done, failed, cancelled), and what a stopped or interrupted
+// run writes, which this file adds to.
 
 import { formatSpeed } from "./setup.js";
-import { RUN_ENDED, isRunEnded, markStopped as markRunStopped, markInterrupted as markRunInterrupted } from "./task-runs.js";
 
 export const CASE_TYPE = "openfoam-case";
 export const RUN_TYPE = "openfoam-run";
 export const PROTOCOL_VERSION = 1;
 
-/** Run statuses: queued, this package's working ones, and the endings the kit reads (src/task-runs.js RUN_ENDED). */
-export const STATUSES = Object.freeze(["queued", "meshing", "solving", "post", ...RUN_ENDED]);
-/** The statuses that say a run has ended, and whether a status is one, by this package's names for the kit's. */
-export const TERMINAL = RUN_ENDED;
-export const isTerminal = isRunEnded;
-
-/** The run's code: what a run's task names, within this package (src/task-runs.js codeUrl). */
+/** The run's code: what a run's task names, within this package (`inSamePackage(import.meta.url, RUN_CODE)`). */
 export const RUN_CODE = "daemon/run-task.mjs";
 
 /**
@@ -145,29 +140,29 @@ export function requestFinish(run) {
 // ---------------------------------------------------------------- stopping
 
 /**
- * The run's code, told to stop (inside a change on the run doc): the kit's
- * `markStopped` (src/task-runs.js), and one thing of this package's own: a
- * run that had finished and was keeping its flow volume keeps its status and
- * says the volume wasn't kept.
+ * The run's code, told to stop (inside a change on the run doc): the task
+ * client's `markStopped`, and one thing of this package's own: a run that
+ * had finished and was keeping its flow volume keeps its status and says the
+ * volume wasn't kept.
  */
-export function markStopped(run, reason, now) {
-  if (reason !== "yielded" && isTerminal(run.status) && run.volume?.status === "posting") {
+export function markStopped(tasks, run, reason, now) {
+  if (reason !== "yielded" && tasks.isRunEnded(run.status) && run.volume?.status === "posting") {
     run.volume.status = "failed";
     run.volume.error = reason === "cancelled" ? "cancelled while keeping it" : "the machine running it stopped while keeping it";
     for (const s of run.stages ?? []) if (s.id === "volume" && s.status === "running") s.status = "failed";
     return;
   }
-  markRunStopped(run, reason, now);
+  tasks.markStopped(run, reason, now);
 }
 
 /**
  * A run taken up again after its first try was interrupted (inside a change
- * on the run doc): the kit's `markInterrupted`, and a run that had finished
- * and was keeping its volume says the volume wasn't kept.
+ * on the run doc): the task client's `markInterrupted`, and a run that had
+ * finished and was keeping its volume says the volume wasn't kept.
  */
-export function markInterrupted(run, now) {
-  if (isTerminal(run.status)) markStopped(run, "stopping", now);
-  else markRunInterrupted(run, now);
+export function markInterrupted(tasks, run, now) {
+  if (tasks.isRunEnded(run.status)) markStopped(tasks, run, "stopping", now);
+  else tasks.markInterrupted(run, now);
 }
 
 // ---------------------------------------------------------------- progress

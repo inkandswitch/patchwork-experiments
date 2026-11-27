@@ -5,15 +5,20 @@
 //   node probes/volume-run.mjs keep --case ~/.patchwork-openfoam/runs/<id> [--sync wss://…]
 //   node probes/volume-run.mjs read --url automerge:<volume> --case <same dir> [--fields p,U] [--pieces 0,1]
 //
-// Each prints one JSON line of timings at the end.
+// Each prints one JSON line of timings at the end. Docs are found with the
+// task client from the tasks package's Node build (beside TASKS_HOST, or
+// ../tasks/dist-node): this process is not a pool and has no registry.
 
 import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Repo, initSubduction } from "@automerge/automerge-repo";
 import { keepVolume } from "../daemon/volume.mjs";
 import { readVolume, volumeBytes, parseFoam } from "../src/volume.js";
 import { serverWatch, freshPeer } from "../src/segments.js";
-import { findWhenThere } from "../src/task-runs.js";
+
+const TASKS_HOST = process.env.TASKS_HOST ?? fileURLToPath(new URL("../../tasks/dist-node/host.mjs", import.meta.url));
+const { findWhenThere } = await import(pathToFileURL(join(dirname(TASKS_HOST), "task-client.mjs")).href);
 
 const [cmd, ...rest] = process.argv.slice(2);
 const args = Object.fromEntries(rest.reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), []));
@@ -34,7 +39,7 @@ setTimeout(() => {
 
 if (cmd === "keep") {
   const watch = serverWatch(repo);
-  const checker = freshPeer(() => new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] }));
+  const checker = freshPeer(() => new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] }), { find: findWhenThere });
   const v = await keepVolume({
     verify: checker.verify,
     repo,
@@ -55,7 +60,7 @@ if (cmd === "keep") {
   const pieces = args.pieces ? String(args.pieces).split(",").map(Number) : null;
   const want = { mesh: true, fields, pieces };
   log(`volume: ${doc.pieces.length} pieces at time ${doc.time}, ${MB(doc.total)} MB in all; this read is ${MB(volumeBytes(doc, want))} MB`);
-  const r = await readVolume(repo, doc, want);
+  const r = await readVolume(repo, doc, { ...want, find: findWhenThere });
   const tRead = s();
   // byte for byte against the case on disk, and parsed
   let same = true, cells = 0, values = 0;

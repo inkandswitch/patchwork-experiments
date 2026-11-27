@@ -2,7 +2,6 @@
 // and what the agent's results tool quotes. Pure.
 
 import { G, MODE_LABELS, formatSpeed } from "./setup.js";
-import { isTerminal } from "./protocol.js";
 
 /**
  * The weight the hull floats at, as the run has it: its displaced volume at
@@ -41,7 +40,6 @@ export function runFigures(run) {
   const runningStage = (run?.stages ?? []).find((st) => st.status === "running") ?? null;
   return {
     status: run?.status ?? "unknown",
-    terminal: isTerminal(run?.status),
     mode: s?.mode ?? run?.setup?.mode ?? null,
     speed: run?.setup?.speed ?? null,
     mesh: run?.setup?.mesh ?? null,
@@ -104,7 +102,7 @@ export function resultsTable(runs) {
       const e = f.error.length > MAX_ERROR ? `${f.error.slice(0, MAX_ERROR)}…` : f.error;
       notes.push(`${k}. failed${f.failedStage ? ` at “${f.failedStage}”` : ""}: ${e}`);
     } else if (f.status === "cancelled") notes.push(`${k}. cancelled.`);
-    else if (!f.terminal) notes.push(`${k}. ${f.status}${f.stage ? ` (${f.stage})` : ""}: not finished.`);
+    else if (f.status !== "done") notes.push(`${k}. ${f.status}${f.stage ? ` (${f.stage})` : ""}: not finished.`);
   });
   const more = runs.length > shown.length ? `\n(${runs.length - shown.length} more runs not listed: pass \`runs\` to pick.)` : "";
   const key =

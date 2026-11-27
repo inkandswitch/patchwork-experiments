@@ -3,13 +3,13 @@
 // (src/agent-tools.js) both call these, so a person and an agent can't
 // disagree about what "Float at" or "Run" does.
 //
-// Needs a repo (find / create2) and, to read a hull from its original model
-// rather than the copy kept with the case, the host's plugin registry
-// (src/hull/acquire.js). No DOM.
+// Needs a repo (find / create2), the task client (`tasks`: the Tasks
+// package's library, which its callers get from the registry) and, to read a
+// hull from its original model rather than the copy kept with the case, the
+// host's plugin registry (src/hull/acquire.js). No DOM.
 
 import { normalizeSetup, waterProperties, metresPerSecond, froude, reynolds, frictionEstimate, waveLength, domainForHull, estimateCells, estimateSeconds } from "./setup.js";
 import { newRun, RUN_CODE } from "./protocol.js";
-import { askRun, isQueue, codeUrl, findWhenThere } from "./task-runs.js";
 import { acquireHull } from "./hull/acquire.js";
 import { prepareHull, sinkageForVolume, weld, edgeStats, boundsOf } from "./hull/prepare.js";
 import { partsOf, waterPlanes, defaultParts, hullTriangles } from "./hull/parts.js";
@@ -23,17 +23,18 @@ import { geometryDigest } from "./inputs.js";
  * The model a case's hull link names, as read: from the copy kept with the
  * case when it holds the parts wanted, else from the original.
  * @param {object} hullField  the case's `hull`: { url, stash?, parts?, bow? }
- * @param {{ fromSource?: boolean, getRegistry?: Function }} [o]  fromSource: skip the kept copy (Re-read)
+ * @param {{ tasks: object, fromSource?: boolean, getRegistry?: Function }} o  tasks: the task client; fromSource: skip the kept copy (Re-read)
  * @returns {Promise<object>}  acquireHull()'s result ({ ok, triangles, ranges, parts?, path, title, … } or { ok: false, error }),
  *   with `stashUrl` when it came from the kept copy
  */
-export async function readHull(repo, hullField, { fromSource = false, getRegistry } = {}) {
+export async function readHull(repo, hullField, { tasks, fromSource = false, getRegistry }) {
   const url = hullField?.url ?? null;
   if (!url) return { ok: false, error: "no hull linked" };
   if (hullField.stash && !fromSource) {
     let r = null;
     try {
-      r = fromStash(await internalize(repo, (await findWhenThere(repo, hullField.stash, { tries: 4 })).doc()));
+      const find = tasks.findWhenThere;
+      r = fromStash(await internalize(repo, (await find(repo, hullField.stash, { tries: 4 })).doc(), { find }));
     } catch {
       r = null;
     }
@@ -261,7 +262,7 @@ export async function keepHull(repo, result, model, url, { now = Date.now() } = 
  * Why a run can't be asked for yet, or null. The server is a found handle
  * (or null while it loads); `serverError` what went wrong finding it.
  */
-export function runBlocker({ hullUrl, result, loading = false, prepared, serverUrl, serverDoc, serverError = null }) {
+export function runBlocker({ tasks, hullUrl, result, loading = false, prepared, serverUrl, serverDoc, serverError = null }) {
   if (!hullUrl) return "Link a hull first.";
   if (!result?.ok) return loading ? "Loading the hull…" : `The hull can't be read here${result?.error ? `: ${result.error}` : "."}`;
   if (prepared?.error) return `The hull can't be prepared: ${prepared.error}`;
@@ -270,7 +271,7 @@ export function runBlocker({ hullUrl, result, loading = false, prepared, serverU
   if (!serverUrl) return "Choose a server.";
   if (serverError) return serverError;
   if (!serverDoc) return "Loading the server…";
-  if (!isQueue(serverDoc)) return "That link isn't a task queue: paste the queue link the OpenFOAM host printed (daemon/start.sh).";
+  if (!tasks.isQueue(serverDoc)) return "That link isn't a task queue: paste the queue link the OpenFOAM host printed (daemon/start.sh).";
   return null;
 }
 
@@ -279,6 +280,7 @@ export function runBlocker({ hullUrl, result, loading = false, prepared, serverU
  * prepared, listed in the case and asked of the server (a task queue) as a
  * task keyed by the run doc's url.
  * @param {object} o
+ * @param {object} o.tasks  the task client
  * @param {object} o.caseHandle
  * @param {object} o.serverHandle  the task queue
  * @param {object} o.result     the model as read (readHull)
@@ -289,7 +291,7 @@ export function runBlocker({ hullUrl, result, loading = false, prepared, serverU
  * @param {string} [o.message]  the change message on the case and run docs
  * @returns {Promise<object[]>}  the run handles, in order
  */
-export async function queueRuns(repo, { caseHandle, serverHandle, result, prepared, setups, by = null, made = null, message, now = () => Date.now() }) {
+export async function queueRuns(repo, { tasks, caseHandle, serverHandle, result, prepared, setups, by = null, made = null, message, now = () => Date.now() }) {
   const r = result;
   const p = prepared;
   const d = caseHandle.doc();
@@ -329,22 +331,24 @@ export async function queueRuns(repo, { caseHandle, serverHandle, result, prepar
     });
     const suggested = d["@patchwork"]?.suggestedImportUrl;
     if (suggested) run["@patchwork"].suggestedImportUrl = suggested;
-    handles.push(await addRun(repo, { caseHandle, serverHandle, run, message }));
+    handles.push(await addRun(repo, { tasks, caseHandle, serverHandle, run, message }));
   }
   return handles;
 }
 
 /** A new run with a finished one's setup and its frozen hull, exactly. */
-export async function queueRerun(repo, { caseHandle, serverHandle, run, by = null, made = null, message, now = () => Date.now() }) {
+export async function queueRerun(repo, { tasks, caseHandle, serverHandle, run, by = null, made = null, message, now = () => Date.now() }) {
   const copy = JSON.parse(JSON.stringify({ setup: run.setup, hull: { ...run.hull, stl: null } }));
   // segments never change, so a ref is copied as it is
   copy.hull.stl = isRef(run.hull.stl) ? JSON.parse(JSON.stringify(run.hull.stl)) : new Uint8Array(run.hull.stl);
   const doc = newRun({ caseUrl: caseHandle.url, serverUrl: serverHandle.url, setup: copy.setup, hull: copy.hull, by, now: now(), title: `${run.title} (again)`, made });
-  return addRun(repo, { caseHandle, serverHandle, run: doc, message });
+  return addRun(repo, { tasks, caseHandle, serverHandle, run: doc, message });
 }
 
-async function addRun(repo, { caseHandle, serverHandle, run, message }) {
-  codeUrl(RUN_CODE); // a tool that can't name the run's code says so before it makes anything
+async function addRun(repo, { tasks, caseHandle, serverHandle, run, message }) {
+  // named from where this module was loaded; a tool that can't name the run's code says so before it makes anything
+  const importUrl = tasks.inSamePackage(import.meta.url, RUN_CODE);
+  if (!importUrl) throw new Error("This copy of the tool wasn't loaded from its package, so it can't name the code that does its runs; open it from Patchwork.");
   const rh = await repo.create2(run);
   const opts = message ? { message } : undefined;
   caseHandle.change((x) => {
@@ -352,6 +356,7 @@ async function addRun(repo, { caseHandle, serverHandle, run, message }) {
     x.runs.push(rh.url);
     x.selected = rh.url;
   }, opts);
-  await askRun(repo, serverHandle.url, rh, RUN_CODE, opts);
+  const { taskUrl } = await tasks.ask(repo, serverHandle.url, { importUrl, input: { run: rh.url }, key: rh.url });
+  rh.change((d) => void (d.task = taskUrl), opts);
   return rh;
 }

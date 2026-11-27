@@ -4,17 +4,13 @@
 
 import css from "./styles.css?inline";
 import { normalizeSetup, patchSetup, writeSetup, setupProblems, speedIn, MODE_LABELS, MESH_PRESETS, KNOT, formatDuration, formatSpeed } from "../setup.js";
-import { isTerminal } from "../protocol.js";
-import { isQueue, queueCounts, servedBy, shownRun } from "../task-runs.js";
-import { served, watch } from "../task-client.js";
-import { BEAT_MS } from "../task-rules.js";
 import { pathLabel } from "../hull/acquire.js";
 import { stashCovers } from "../hull/stash.js";
 import { readHull, hullModel, prepareModel, partShells, floatAt, keepDisplacement, writeAttitude, keepHull as keepHullDoc, runBlocker, queueRuns, queueRerun, sinkageMeaning, preflight } from "../case-model.js";
 import { renderKey } from "../render-read.js";
 import { hasPatchworkDrop, parsePatchworkDrop, parseAutomergeUrl } from "../dnd.js";
 import { drawHull } from "./fields.js";
-import { mountRunView, fmtN, fmtW } from "./run-view.js";
+import { mountRunView, withTasks, fmtN, fmtW } from "./run-view.js";
 import { lineChart, seriesColors } from "./charts.js";
 import { variantKey, variantLetters, setupFromRun } from "../inputs.js";
 import { version as TOOL_VERSION } from "../../package.json";
@@ -32,7 +28,10 @@ async function whoAmI(repo) {
   }
 }
 
-export default function CaseTool(handle, element) {
+export default (handle, element) => withTasks(element, (tasks) => CaseTool(handle, element, tasks));
+
+function CaseTool(handle, element, tasks) {
+  const { isQueue, queueCounts, servedBy, shownRun, served, watch, BEAT_MS, isRunEnded: isTerminal } = tasks;
   const repo = repoOf(handle);
   const style = document.createElement("style");
   style.textContent = css;
@@ -149,9 +148,10 @@ export default function CaseTool(handle, element) {
       handle.change((d) => writeSetup(d, patchSetup(d.setup, { mode: "free-surface", attitude: { sinkage: +attitude.sinkage.toFixed(4), trim: +attitude.trim.toFixed(3) } }).setup));
   // the run going now (stages, convergence, stop), and the finished run being read
   const variantOf = (run) => (run ? (variants.get(variantKey(run)) ?? null) : null);
-  const liveView = mountRunView($(".live-host"), { repo, showTitle: true, variant: variantOf });
+  const liveView = mountRunView($(".live-host"), { repo, tasks, showTitle: true, variant: variantOf });
   const resultView = mountRunView($(".result-host"), {
     repo,
+    tasks,
     showTitle: true,
     variant: variantOf,
     onUseAttitude: (a) => {
@@ -289,7 +289,7 @@ export default function CaseTool(handle, element) {
         hull.loading = true;
         renderHull();
         // the hull kept with the case, when it has one and it holds the parts wanted; else the original
-        const r = await readHull(repo, doc()?.hull, { fromSource: acq.fromSource });
+        const r = await readHull(repo, doc()?.hull, { tasks, fromSource: acq.fromSource });
         const fromStashDoc = r.path === "stash";
         if (disposed) return;
         if (doc()?.hull?.url !== url) {
@@ -637,7 +637,7 @@ export default function CaseTool(handle, element) {
 
   // ------------------------------------------------------------ run
   const whyNot = () =>
-    runBlocker({ hullUrl: doc()?.hull?.url, result: hull.result, loading: hull.loading, prepared, serverUrl: server.url, serverDoc: server.handle?.doc() ?? null, serverError: server.error });
+    runBlocker({ tasks, hullUrl: doc()?.hull?.url, result: hull.result, loading: hull.loading, prepared, serverUrl: server.url, serverDoc: server.handle?.doc() ?? null, serverError: server.error });
   function renderRunButton() {
     const why = whyNot();
     $(".run").disabled = !!why;
@@ -652,6 +652,7 @@ export default function CaseTool(handle, element) {
     const by = await whoAmI(repo);
     showTab("runs");
     await queueRuns(repo, {
+      tasks,
       caseHandle: handle,
       serverHandle: server.handle,
       result: hull.result,
@@ -682,7 +683,7 @@ export default function CaseTool(handle, element) {
   async function rerun(run) {
     if (!server.handle || server.error) return;
     const by = await whoAmI(repo);
-    await queueRerun(repo, { caseHandle: handle, serverHandle: server.handle, run, by, made: { tool: "openfoam", version: TOOL_VERSION } });
+    await queueRerun(repo, { tasks, caseHandle: handle, serverHandle: server.handle, run, by, made: { tool: "openfoam", version: TOOL_VERSION } });
   }
   $(".run-sweep").addEventListener("click", () => {
     // the sweep's speeds are in the speed's unit, as the field beside it says

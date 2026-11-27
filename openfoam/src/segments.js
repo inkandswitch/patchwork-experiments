@@ -40,8 +40,8 @@
 // Splitting by meaning comes first: a caller makes one ref per thing a
 // reader might want on its own (a field on one processor, a mesh file), and
 // this splits only what's still too big.
-
-import { findWhenThere } from "./task-runs.js";
+//
+// Readers find segment docs with the `find` they are given: the task client's findWhenThere.
 
 export const SEGMENT_TYPE = "openfoam-segment";
 /** No doc holds more bytes than this (see the workaround note above). */
@@ -88,9 +88,10 @@ export async function putBytes(repo, bytes, { segmentBytes = SEGMENT_BYTES, titl
 
 /**
  * Bytes, inline or from a ref, checked against the ref's size and digest.
+ * @param {{ parallel?: number, find?: (repo: object, url: string) => Promise<object> }} [o]  find: how to find a segment doc (needed for a ref)
  * @returns {Promise<Uint8Array|null>}  null for null/undefined
  */
-export async function getBytes(repo, v, { parallel = FETCH_PARALLEL, find = findWhenThere } = {}) {
+export async function getBytes(repo, v, { parallel = FETCH_PARALLEL, find } = {}) {
   if (v == null) return null;
   if (!isRef(v)) return asBytes(v);
   const urls = v["@segments"];
@@ -254,9 +255,10 @@ export function serverWatch(repo) {
  * a separate peer (its own repo, nothing stored) fetching them. For
  * serverWatch's `verify`. The peer is made on first use.
  * @param {() => object|Promise<object>} makeRepo   a fresh repo on the same sync server
+ * @param {{ find: Function, tries?: number, parallel?: number }} o  find: the task client's findWhenThere, given `{ tries }`
  * @returns {{ verify: (urls: string[]) => Promise<string[]>, close: () => Promise<void> }}
  */
-export function freshPeer(makeRepo, { tries = 2, parallel = FETCH_PARALLEL } = {}) {
+export function freshPeer(makeRepo, { find, tries = 2, parallel = FETCH_PARALLEL }) {
   let peer = null;
   const verify = async (urls) => {
     peer ??= await makeRepo();
@@ -267,7 +269,7 @@ export function freshPeer(makeRepo, { tries = 2, parallel = FETCH_PARALLEL } = {
         while (next < urls.length) {
           const u = urls[next++];
           try {
-            await findWhenThere(peer, u, { tries });
+            await find(peer, u, { tries });
           } catch {
             gone.push(u);
           }

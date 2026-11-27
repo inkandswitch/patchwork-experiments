@@ -10,11 +10,14 @@
 // fingerprinted by its status and its layer links, which change exactly
 // twice (when it finishes, and if it's re-run, never: runs are immutable
 // once done). The layer docs themselves are written once and never change.
+//
+// A run's docs are found with the task client's findWhenThere, from the
+// registry: a build that needs one waits for the Tasks package.
 
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { CASE_TYPE, RUN_TYPE, decodeLayer } from "./protocol.js";
 import { decodeSTL } from "./hull/prepare.js";
 import { buildResultsGLB } from "./scene-build.js";
-import { findWhenThere } from "./task-runs.js";
 import { getBytes, internalize } from "./segments.js";
 
 const typeOf = (doc) => doc?.["@patchwork"]?.type;
@@ -53,12 +56,13 @@ export default {
     const picked = await pickRun(doc, url, repo);
     if (!picked?.run) return buildResultsGLB({ layers: {}, params, mode: "double-body", notes: ["no runs yet"] });
     const { run } = picked;
+    const find = (await getRegistry("patchwork:library").loadWhenReady("tasks-next")).module.findWhenThere;
     const notes = [];
     const layers = {};
     if (run.status === "done") {
       for (const [name, u] of Object.entries(run.layers ?? {})) {
         // a layer that isn't here yet is this peer's problem: throw, keep the last good render
-        const L = decodeLayer(await internalize(repo, (await findWhenThere(repo, u, { tries: 4 })).doc()));
+        const L = decodeLayer(await internalize(repo, (await find(repo, u, { tries: 4 })).doc(), { find }));
         if (!L) throw new Error(`the ${name} layer hasn't arrived`);
         layers[name] = L;
       }
@@ -67,7 +71,7 @@ export default {
     let hullTriangles = null;
     if (run.status !== "done" && run.hull?.stl) {
       try {
-        hullTriangles = decodeSTL(await getBytes(repo, run.hull.stl));
+        hullTriangles = decodeSTL(await getBytes(repo, run.hull.stl, { find }));
       } catch {
         hullTriangles = null;
       }

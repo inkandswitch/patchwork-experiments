@@ -15,10 +15,12 @@
 //
 // Every input is something another tool produces: automerge: URLs, numbers
 // with their units, part names. Every write is one change whose message
-// names the agent session and why.
+// names the agent session and why. Each call asks the registry for the task
+// client (the Tasks package's library) and is refused at once, not held,
+// where that package isn't installed.
 
-import { CASE_TYPE, RUN_TYPE, initCase, isTerminal, requestFinish } from "./protocol.js";
-import { isQueue, hearServing, queueCounts, servedBy, cancelRun, lookAtTask, shownRun } from "./task-runs.js";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { CASE_TYPE, RUN_TYPE, initCase, requestFinish } from "./protocol.js";
 import { defaultSetup, normalizeSetup, patchSetup, writeSetup, setupProblems, parseSpeed, formatSpeed, formatSpeedBoth, formatDuration, MODES, MODE_LABELS, MESH_PRESETS } from "./setup.js";
 import { readHull, hullModel, prepareModel, partShells, unknownParts, floatAt, keepDisplacement, parseMass, sinkageMeaning, keepHull, runBlocker, queueRuns, preflight } from "./case-model.js";
 import { resultsTable, runLine, MAX_ROWS } from "./results.js";
@@ -33,6 +35,12 @@ import { version as TOOL_VERSION } from "../package.json";
 // `ctx.session` ({ url, doc() }), and has no other field for it.
 const message = (ctx, why) => `agent${ctx?.session?.url ? ` ${ctx.session.url}` : ""}: ${why}`;
 const MADE = { tool: "openfoam", version: TOOL_VERSION };
+/** The task client, or a refusal saying the Tasks package isn't here. */
+async function taskClient() {
+  const tasks = (await getRegistry("patchwork:library").load("tasks-next"))?.module;
+  if (!tasks) throw new Error("OpenFOAM needs the Tasks package, which is not installed here.");
+  return tasks;
+}
 /** How many parts a report lists; more are counted. */
 export const MAX_PARTS = 40;
 /** How many runs one call may ask for. */
@@ -60,24 +68,24 @@ async function findTyped(ctx, url, type, label, hint) {
 const findCase = (ctx, input) => findTyped(ctx, urlOf(input, "case", "the automerge: URL of an OpenFOAM case (openfoam_case makes one)"), CASE_TYPE, "an OpenFOAM case", "openfoam_case makes one.");
 
 /** The case's server (a task queue), and (unless `hear` is false) the machines heard serving it. */
-async function openServer(ctx, url, { hear = true } = {}) {
+async function openServer(ctx, tasks, url, { hear = true } = {}) {
   if (!url) return { url: null, handle: null, doc: null, error: null, pools: [] };
   try {
     const handle = await ctx.repo.find(url);
     const doc = handle.doc();
-    if (!isQueue(doc)) return { url, handle, doc, error: "that link isn't a task queue (the OpenFOAM host prints one when it starts)", pools: [] };
-    return { url, handle, doc, error: null, pools: hear ? await hearServing(ctx.repo, url) : [] };
+    if (!tasks.isQueue(doc)) return { url, handle, doc, error: "that link isn't a task queue (the OpenFOAM host prints one when it starts)", pools: [] };
+    return { url, handle, doc, error: null, pools: hear ? await tasks.hearServing(ctx.repo, url) : [] };
   } catch (err) {
     return { url, handle: null, doc: null, error: `couldn't load the queue (${err?.message ?? err})`, pools: [] };
   }
 }
 
 /** Everything about a case a report needs: its hull read and prepared at the setup's attitude, its server. */
-async function loadCase(ctx, handle, { fromSource = false, hullField } = {}) {
+async function loadCase(ctx, tasks, handle, { fromSource = false, hullField } = {}) {
   const doc = handle.doc();
   const setup = normalizeSetup(doc.setup);
   const hf = hullField ?? doc.hull ?? null;
-  const result = hf?.url ? await readHull(ctx.repo, hf, { fromSource }) : null;
+  const result = hf?.url ? await readHull(ctx.repo, hf, { tasks, fromSource }) : null;
   const model = result?.ok ? hullModel(result, hf) : null;
   let prepared = null;
   if (model) {
@@ -87,12 +95,12 @@ async function loadCase(ctx, handle, { fromSource = false, hullField } = {}) {
       prepared = { error: String(err?.message ?? err) };
     }
   }
-  const server = await openServer(ctx, doc.server ?? null);
-  return { handle, doc, setup, hullField: hf, result, model, prepared, server };
+  const server = await openServer(ctx, tasks, doc.server ?? null);
+  return { tasks, handle, doc, setup, hullField: hf, result, model, prepared, server };
 }
 
 const blockerOf = (c) =>
-  runBlocker({ hullUrl: c.hullField?.url, result: c.result, prepared: c.prepared, serverUrl: c.server.url, serverDoc: c.server.doc, serverError: c.server.error });
+  runBlocker({ tasks: c.tasks, hullUrl: c.hullField?.url, result: c.result, prepared: c.prepared, serverUrl: c.server.url, serverDoc: c.server.doc, serverError: c.server.error });
 
 const m3 = (v) => (Number.isFinite(v) ? +v.toFixed(3) : "?");
 const range = (lo, hi) => `${m3(lo)}…${m3(hi)}`;
@@ -161,11 +169,11 @@ function expectText(c) {
   return `Expect: Fn ${pf.Fn.toFixed(3)}, Re ${pf.Re.toExponential(2)} on L = ${m3(pf.L)} m; ITTC-57 friction alone ${Math.round(pf.friction.R).toLocaleString("en")} N (the floor R_T should sit above); ${pf.half ? "half model" : "full model"}; ≈ ${Math.round(pf.cells / 1000)}k cells; ${pf.upTo ? "up to " : ""}≈ ${formatDuration(pf.seconds)} on ${pf.cores} cores${pf.volumeBytes ? `; flow volume ≈ ${Math.round(pf.volumeBytes / 1048576)} MB` : ""}.`;
 }
 
-function serverText(sv) {
+function serverText(tasks, sv) {
   if (!sv.url) return "Server: none. Set one with openfoam_case { case, server: <the task queue URL the OpenFOAM host printed> }.";
   if (sv.error) return `Server: ${sv.url}: ${sv.error}.`;
-  const by = servedBy(sv.pools);
-  const q = queueCounts(sv.doc, sv.pools);
+  const by = tasks.servedBy(sv.pools);
+  const q = tasks.queueCounts(sv.doc, sv.pools);
   return `Server: “${sv.doc.title ?? "OpenFOAM"}” (${sv.url}): ${by ? `served by ${by}` : "nobody is heard serving it (runs wait in its queue until a machine does)"}; ${q.running ? `running ${q.running}` : "nothing running"}${q.waiting ? `, ${q.waiting} waiting` : ""}.`;
 }
 
@@ -182,7 +190,7 @@ function report(c, { head = null } = {}) {
     setupText(c.setup),
     problems.length ? `Setup as stored: ${problems.join("; ")}. openfoam_setup writes it as shown above.` : null,
     expectText(c),
-    serverText(c.server),
+    serverText(c.tasks, c.server),
     `Runs: ${runs}${runs ? ": openfoam_results { case } tabulates them" : ""}.`,
     blocker ? `Not ready to run: ${blocker}` : `Ready: openfoam_run { case } asks for a run at ${formatSpeed(c.setup.speed)}, or pass \`speeds\` for a sweep.`,
   ]
@@ -194,6 +202,7 @@ function report(c, { head = null } = {}) {
 
 export const caseTool = {
   async execute(input, ctx) {
+    const tasks = await taskClient();
     const changes = [];
     let handle;
     let made = null;
@@ -252,7 +261,7 @@ export const caseTool = {
     let serverUrl;
     if (input.server !== undefined && input.server !== null && input.server !== "") {
       serverUrl = urlOf(input.server, "server", "the task queue the OpenFOAM host printed");
-      const sv = await openServer(ctx, serverUrl, { hear: false });
+      const sv = await openServer(ctx, tasks, serverUrl, { hear: false });
       if (sv.error) throw new Error(`\`server\` ${serverUrl}: ${sv.error}.`);
       if (serverUrl !== doc.server) changes.push(`server ${serverUrl}`);
       else serverUrl = undefined;
@@ -260,7 +269,7 @@ export const caseTool = {
 
     // read the hull as it will be linked: unknown parts are refused before anything is written
     const fromSource = input.reread === true;
-    const c = await loadCase(ctx, handle, { fromSource, hullField: hf });
+    const c = await loadCase(ctx, tasks, handle, { fromSource, hullField: hf });
     if (input.parts !== undefined && input.parts !== "default" && c.model) {
       const unknown = unknownParts(c.model, input.parts);
       if (unknown.length) throw new Error(`No part named ${unknown.map((n) => JSON.stringify(n)).join(", ")} in “${c.result.title}”. Its parts: ${c.model.parts.map((p) => JSON.stringify(p.name)).join(", ")}.`);
@@ -285,7 +294,7 @@ export const caseTool = {
         { message: message(ctx, changes.join("; ") || "update the case") },
       );
     // the hull as just read stands (reading it again could mean converting the original twice)
-    const after = { ...c, doc: handle.doc(), hullField: hf, server: serverUrl ? await openServer(ctx, serverUrl) : c.server };
+    const after = { ...c, doc: handle.doc(), hullField: hf, server: serverUrl ? await openServer(ctx, tasks, serverUrl) : c.server };
     const text = report(after, { head: changes.length ? `Done: ${changes.join("; ")}.` : null });
     return made ? { text, doc: made } : text;
   },
@@ -348,6 +357,7 @@ export function setupPatch(input) {
 
 export const setupTool = {
   async execute(input, ctx) {
+    const tasks = await taskClient();
     const handle = await findCase(ctx, input.case);
     const patch = setupPatch(input);
     const fl = input.float;
@@ -369,7 +379,7 @@ export const setupTool = {
     for (const k of Object.keys(patch.attitude ?? {})) changes.push(`${k} ${next.attitude[k]}`);
     let floated = null;
     if (fl) {
-      const c = await loadCase(ctx, handle);
+      const c = await loadCase(ctx, tasks, handle);
       if (!c.result?.ok) throw new Error(`Can't float the hull: ${blockerOf(c) ?? c.result?.error ?? "no hull"}.`);
       if (fl.mass !== undefined) {
         const mass = parseMass(fl.mass);
@@ -388,7 +398,7 @@ export const setupTool = {
     const stored = handle.doc().setup;
     const differs = JSON.stringify(normalizeSetup(stored)) !== JSON.stringify(next) || setupProblems(stored).length > 0;
     if (differs) handle.change((d) => writeSetup(d, next), { message: message(ctx, `set up the run: ${changes.join("; ") || "as shown"}`) });
-    const c = await loadCase(ctx, handle);
+    const c = await loadCase(ctx, tasks, handle);
     return report(c, { head: differs ? `Done: ${changes.join("; ") || "wrote the setup as shown"}.` : "Nothing changed: the setup already reads so." });
   },
   summarize(input) {
@@ -409,6 +419,7 @@ export const STATUS_END = "done|failed|cancelled";
 
 export const runTool = {
   async execute(input, ctx) {
+    const tasks = await taskClient();
     const handle = await findCase(ctx, input.case);
     let speeds = null;
     if (input.speeds !== undefined) {
@@ -416,11 +427,12 @@ export const runTool = {
       if (input.speeds.length > MAX_SWEEP) throw new Error(`At most ${MAX_SWEEP} runs a call; ${input.speeds.length} were asked for.`);
       speeds = input.speeds.map(parseSpeed);
     }
-    const c = await loadCase(ctx, handle);
+    const c = await loadCase(ctx, tasks, handle);
     const blocker = blockerOf(c);
     if (blocker) throw new Error(`Can't run yet: ${blocker} (openfoam_case reports the case).`);
     const setups = (speeds ?? [c.setup.speed]).map((speed) => normalizeSetup({ ...c.setup, speed }));
     const handles = await queueRuns(ctx.repo, {
+      tasks,
       caseHandle: handle,
       serverHandle: c.server.handle,
       result: c.result,
@@ -431,9 +443,9 @@ export const runTool = {
       message: message(ctx, `ask for ${setups.length === 1 ? "a run" : `${setups.length} runs`} at ${setups.map((s) => formatSpeed(s.speed)).join(", ")}`),
     });
     const online = c.server.pools.length > 0;
-    const ahead = queueCounts(c.server.handle.doc(), c.server.pools).listed - handles.length;
+    const ahead = tasks.queueCounts(c.server.handle.doc(), c.server.pools).listed - handles.length;
     const lines = [
-      `Asked for ${handles.length === 1 ? "a run" : `${handles.length} runs`} on “${c.server.doc.title ?? "OpenFOAM"}”: ${online ? `served by ${servedBy(c.server.pools)}` : "NOBODY IS SERVING IT — they wait in its queue until a machine does"}${ahead > 0 ? `; ${ahead} ahead of them` : ""}.`,
+      `Asked for ${handles.length === 1 ? "a run" : `${handles.length} runs`} on “${c.server.doc.title ?? "OpenFOAM"}”: ${online ? `served by ${tasks.servedBy(c.server.pools)}` : "NOBODY IS SERVING IT — they wait in its queue until a machine does"}${ahead > 0 ? `; ${ahead} ahead of them` : ""}.`,
       ...handles.map((h, i) => `  ${i + 1}. ${h.url} — ${runLine(h.doc())}`),
       `Each run's state is the small field ${JSON.stringify(STATUS_PATH)} of its document: queued → meshing → solving → post → done, or failed, or cancelled. A run cancelled before it started stays "queued" there; openfoam_results says what became of it.`,
       `To wait, watch it: ${handles.map((h) => `doc_watch { url: "${h.url}", path: ${JSON.stringify(STATUS_PATH)}, match: "${STATUS_END}" }`).join("; ")}. Then openfoam_results { runs: [${handles.map((h) => `"${h.url}"`).join(", ")}] }.`,
@@ -450,6 +462,7 @@ export const runTool = {
 
 export const resultsTool = {
   async execute(input, ctx) {
+    const tasks = await taskClient();
     let urls;
     let head = "";
     if (input.runs !== undefined) {
@@ -468,7 +481,7 @@ export const resultsTool = {
           const h = await ctx.repo.find(url);
           const doc = h.doc();
           if (doc?.["@patchwork"]?.type !== RUN_TYPE) return { url, doc: null, error: `not an OpenFOAM run (${doc?.["@patchwork"]?.type ?? "untyped"})` };
-          return { url, doc: await shownDoc(ctx, doc) };
+          return { url, doc: await shownDoc(ctx, tasks, doc) };
         } catch (err) {
           return { url, doc: null, error: String(err?.message ?? err) };
         }
@@ -482,9 +495,9 @@ export const resultsTool = {
 };
 
 /** A run as a person sees it: its doc, with the status its task gives it (shownRun), from one look at the task. */
-async function shownDoc(ctx, doc) {
-  if (isTerminal(doc.status)) return doc;
-  const s = shownRun(doc, await lookAtTask(ctx.repo, doc));
+async function shownDoc(ctx, tasks, doc) {
+  if (tasks.isRunEnded(doc.status)) return doc;
+  const s = tasks.shownRun(doc, await tasks.lookAtTask(ctx.repo, doc));
   return s.status === doc.status && s.error === (doc.error ?? null) ? doc : { ...doc, status: s.status, error: s.error };
 }
 
@@ -492,20 +505,21 @@ async function shownDoc(ctx, doc) {
 
 export const stopTool = {
   async execute(input, ctx) {
+    const tasks = await taskClient();
     if (!Array.isArray(input.runs) || !input.runs.length) throw new Error("`runs` is a list of run URLs to stop.");
     if (typeof input.keep !== "boolean") throw new Error("`keep`: true finishes now (the solver writes what it has and the results are read), false cancels (nothing is kept).");
     const lines = [];
     for (const raw of input.runs) {
       const url = urlOf(raw, "runs", "an OpenFOAM run");
       const h = await findTyped(ctx, url, RUN_TYPE, "an OpenFOAM run");
-      const run = await shownDoc(ctx, h.doc());
+      const run = await shownDoc(ctx, tasks, h.doc());
       const st = run.status;
-      if (isTerminal(st)) lines.push(`${url}: already ${st}; nothing to stop.`);
+      if (tasks.isRunEnded(st)) lines.push(`${url}: already ${st}; nothing to stop.`);
       else if (input.keep && st !== "solving") lines.push(`${url}: ${st}, not solving, so there's nothing to finish yet; cancel it (keep: false) or wait.`);
       else if (input.keep) {
         h.change((d) => requestFinish(d), { message: message(ctx, "finish the run now") });
         lines.push(`${url}: asked to finish now: the solver writes what it has, then the results are read. Its status (${JSON.stringify(STATUS_PATH)}) says when it has.`);
-      } else if (await cancelRun(ctx.repo, h.doc(), url)) {
+      } else if (await tasks.cancelRun(ctx.repo, h.doc(), url)) {
         lines.push(
           st === "queued"
             ? `${url}: cancelled. If it hadn't started it never will, and its status field stays "queued" (openfoam_results shows it cancelled); if it had, the field says cancelled within seconds.`

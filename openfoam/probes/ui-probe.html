@@ -42,8 +42,10 @@
 <script type="module">
   import { FakeRepo } from "/probes/fake-repo.js";
   import { getRegistry } from "/probes/plugins-stub.js";
-  // served as a package's files are, so the tool can name its run's code (src/task-runs.js codeUrl)
+  // served as a package's files are, so the tool can name its run's code (inSamePackage)
   import { plugins } from "/automerge%3AopenfoamProbePackage/dist/index.js";
+  // the Tasks package's build, whose library `tasks-next` is the task client
+  import { plugins as taskPlugins } from "/tasks/index.js";
 
   const errors = [];
   window.addEventListener("error", (e) => errors.push(String(e.error?.stack ?? e.message)));
@@ -75,11 +77,17 @@
       // canvases read their colours when drawn: redraw by nudging the doc
       caseHandle?.change((d) => (d.title = d.title));
     },
-    async setup({ hull = "/hulls/narrow-transom.glb", online = true } = {}) {
+    /** registers the Tasks package's library, as installing that package does */
+    installTasks() {
+      getRegistry("patchwork:library").register(taskPlugins.find((p) => p.id === "tasks-next"));
+    },
+    /** withoutTasks: the Tasks package isn't installed until installTasks() */
+    async setup({ hull = "/hulls/narrow-transom.glb", online = true, withoutTasks = false } = {}) {
+      if (!withoutTasks) window.__p.installTasks();
       const bytes = new Uint8Array(await (await fetch(hull)).arrayBuffer());
       const file = repo.add({ "@patchwork": { type: "file" }, name: hull.split("/").pop(), extension: "glb", mimeType: "model/gltf-binary", content: bytes });
       serverHandle = repo.add({ title: "OpenFOAM on the probe", jobs: {} });
-      // a machine serving the queue says so every couple of seconds (src/task-client.js, `served`)
+      // a machine serving the queue says so every couple of seconds (the task client's `served`)
       if (online) {
         let seq = 0;
         const beat = () => serverHandle.hear({ type: "serving", pool: "probe-pool", name: "probe-host", slots: 1, busy: 0, from: "probe", seq: seq++ });
@@ -172,6 +180,7 @@
         selected: c.selected,
         requests: Object.keys(s.jobs),
         task: runs[0]?.task ?? null,
+        importUrl: runs[0]?.task ? (repo.handles.get(runs[0].task)?.doc()?.importUrl ?? null) : null,
         run0: runs[0] ? { status: runs[0].status, title: runs[0].title, stl: runs[0].hull?.stl?.byteLength, info: runs[0].hull?.info?.lwl, stages: runs[0].stages.length, stageIds: runs[0].stages.map((x) => x.id), setup: runs[0].setup, geometry: runs[0].hull?.geometry?.digest, triangles: runs[0].hull?.geometry?.triangles, heads: runs[0].hull?.source?.heads, made: runs[0].made?.version } : null,
       };
     },

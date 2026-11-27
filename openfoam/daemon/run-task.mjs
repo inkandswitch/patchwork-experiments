@@ -1,11 +1,11 @@
 // One OpenFOAM run, as a task's code. A case asks its task queue for a run
-// (src/task-runs.js askRun); a tasks host on a machine with OpenFOAM serves
-// the queue (daemon/start.sh) and calls this module's default export with the
+// (src/case-model.js); a tasks host on a machine with OpenFOAM serves the
+// queue (daemon/start.sh) and calls this module's default export with the
 // task's input, `{ run: <the run doc's url> }`, and its context.
 //
-// The kit's makeRunTask (src/task-runs.js) does what any run asked as a task
-// does: finds the run doc, never starts a run twice unasked, echoes progress
-// to the task's view, lets go of the machine when told to stop, and returns
+// The task client's makeRunTask (the library `tasks-next`, which every
+// pool's registry has) does what any run asked as a task does: finds the run
+// doc, never starts a run twice unasked, echoes progress to the task's view, lets go of the machine when told to stop, and returns
 // within the host's grace whatever the runner is waiting on. What is this
 // package's: the run doc's type, OpenFOAM on this machine, the runner
 // (runner.mjs), the echo (`progressOf`: the status, the stage and the
@@ -31,10 +31,10 @@ import { readFileSync } from "node:fs";
 import { homedir, hostname, platform, arch } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { foamEnvironment, foamVersion, defaultCores, KILL_AFTER_MS } from "./foam.mjs";
 import { runJob as realRunJob } from "./runner.mjs";
 import { freshPeer } from "../src/segments.js";
-import { makeRunTask } from "../src/task-runs.js";
 import { RUN_TYPE, markInterrupted } from "../src/protocol.js";
 
 const DEFAULT_SYNC = "wss://subduction.sync.inkandswitch.com";
@@ -117,13 +117,13 @@ function stayAwake() {
   }
 }
 
-/** The second peer: a repo of its own on the sync server, nothing stored, made on first use. */
-function checkerPeer(sync) {
+/** The second peer: a repo of its own on the sync server, nothing stored, made on first use; `find` finds a doc there. */
+function checkerPeer(sync, find) {
   return freshPeer(async () => {
     const { Repo, initSubduction } = await import("@automerge/automerge-repo");
     await initSubduction();
     return new Repo({ network: [], subductionWebsocketEndpoints: [sync] });
-  });
+  }, { find });
 }
 
 /** What a generic task view is told: the run doc's status, the stage it is on, its iteration. */
@@ -133,16 +133,16 @@ export function progressOf(run) {
 }
 
 /**
- * The runner as the kit's makeRunTask calls it: runner.mjs with this
+ * The runner as makeRunTask calls it: runner.mjs with the task client, this
  * machine's OpenFOAM, cores and directories, and a second peer of its own
  * that is closed when the run is over.
- * @param {{ runJob?: typeof realRunJob, peer?: (sync: string) => { verify: Function, close: () => Promise<void> } }} [o]  tests hand it fakes
+ * @param {{ tasks: object, runJob?: typeof realRunJob, peer?: (sync: string, find: Function) => { verify: Function, close: () => Promise<void> } }} o  tests hand it fakes
  */
-export function solve({ runJob = realRunJob, peer = checkerPeer } = {}) {
+export function solve({ tasks, runJob = realRunJob, peer = checkerPeer }) {
   return async ({ repo, handle, facts, signal, say }) => {
-    const checker = peer(facts.sync);
+    const checker = peer(facts.sync, tasks.findWhenThere);
     try {
-      return await runJob({ repo, handle, env: facts.env, workDir: join(facts.state, "runs"), cores: facts.cores, daemon: facts.info, say, signal, verify: checker.verify });
+      return await runJob({ tasks, repo, handle, env: facts.env, workDir: join(facts.state, "runs"), cores: facts.cores, daemon: facts.info, say, signal, verify: checker.verify });
     } finally {
       await checker.close().catch(() => {});
     }
@@ -150,10 +150,12 @@ export function solve({ runJob = realRunJob, peer = checkerPeer } = {}) {
 }
 
 /**
- * What this package's task code is made of. The default export is made from
- * it, and the tests make the same with a fake machine, runner and sleep in
- * their places, so what they check is what runs.
+ * What this package's task code is made of, given the task client. The default
+ * export is made from it, and the tests make the same with fakes in its places.
  */
-export const RUN_TASK = Object.freeze({ type: RUN_TYPE, what: "an OpenFOAM run", machine: thisMachine, runJob: solve(), progressOf, interrupted: markInterrupted, awake: stayAwake, stopWait: STOP_WAIT_MS });
+export const runTask = (tasks) => ({ type: RUN_TYPE, what: "an OpenFOAM run", machine: thisMachine, runJob: solve({ tasks }), progressOf, interrupted: (run, now) => markInterrupted(tasks, run, now), awake: stayAwake, stopWait: STOP_WAIT_MS });
 
-export default makeRunTask(RUN_TASK);
+export default async function (input, ctx) {
+  const { module: tasks } = await getRegistry("patchwork:library").loadWhenReady("tasks-next");
+  return tasks.makeRunTask(runTask(tasks))(input, ctx);
+}

@@ -380,14 +380,21 @@ never overlaps:
 | case | everything | nothing |
 | run | `control.finish`, `task` (once, when it is asked for) | status, stages, progress, mesh, summary, layers, volume, error |
 
-The task and the queue are the tasks package's documents, written through
-`src/task-client.js` and read through `src/task-rules.js`; what joins a run
-doc to its task (asking, cancelling, the guard that never starts a run
-twice, the run's task code around the runner) is `src/task-runs.js`. All
-three are verbatim copies of the tasks package's kit files; `node
-scripts/check-kit.mjs` at the experiments root checks them. The status a
-person sees is the run doc's, or, where nobody wrote it (cancelled before it
-started, a machine that stopped for good), its task's (`shownRun`).
+The task and the queue are the tasks package's documents, written and read
+through its task client: the library `tasks-next` (type `patchwork:library`),
+which this package asks the plugin registry for and never carries a copy of.
+The case and run tools get it as they mount and keep it until they close;
+where the Tasks package isn't installed, each says "OpenFOAM needs the Tasks
+package, which is not installed here." and nothing else, and carries on when
+it arrives. The agent's tools refuse with the same sentence at once. The run's
+task code (`daemon/run-task.mjs`) gets it when it runs: every tasks host has
+it, from its own build where nothing else is installed. The client joins a
+run doc to its task (cancelling, the guard that never starts a run twice,
+the task code around the runner); this package names its run's code itself
+(`inSamePackage(import.meta.url, RUN_CODE)` in `src/case-model.js`). The
+status a person sees is the run doc's, or, where nobody wrote it (cancelled
+before it started, a machine that stopped for good), its task's
+(`shownRun`).
 
 A run doc is made when you press Run, with the setup and the hull (as a
 closed binary STL in the floating frame) frozen into it, so every run
@@ -467,13 +474,17 @@ waterline on a grid plane), the hull preparation on a box with known answers
 files, the parsers and results against **real OpenFOAM output**
 (`daemon/test/fixtures`, from the narrow-transom run above), the scene GLB,
 the process-tree kill, a run told to stop for each reason (cancelled,
-stopping, yielded) with a stand-in solver, the run's task code (its guard
-against solving twice, what it tells a task view), the status read from a
-run doc and its task, the speed and its units, the agent's tools over a fake
+stopping, yielded) with a stand-in solver, the run's task code (what it
+hands the runner and tells a task view, what an interrupted run writes), the
+speed and its units, the agent's tools over a fake
 repo (a GLB of a closed box hull, an open cabin and a water plane: every
 part's report, floating at a mass and trim against the box's exact answer,
 one run and a sweep, the results table, every refusal), and the case tool in
-a page (happy-dom) doing the same through its form.
+a page (happy-dom) doing the same through its form. The task client in tests
+is a stand-in (`src/test/tasks-stand-in.js`), registered as an installed
+Tasks package would be; the probes run against the tasks package's build
+(`../tasks/dist-node/task-client.mjs` beside `TASKS_HOST` in Node, and
+`../tasks/dist` in the UI probe's page).
 
 Probes (need OpenFOAM, or Chrome):
 

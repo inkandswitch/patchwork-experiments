@@ -1,6 +1,6 @@
 // A copy of scene/src/test/fake-repo.js (FakeHandle, FakeRepo), for the probe page and
 // the tests: an in-memory stand-in for an automerge Repo + DocHandle. Beside the
-// original it has what the task kit (src/task-client.js) calls: `create`, `flush`, a
+// original it has what the task client (the Tasks package's) calls: `create`, `flush`, a
 // handle's `documentId`, and `hear`, which delivers a message on a handle's channel as
 // another peer's broadcast would arrive.
 let counter = 0;

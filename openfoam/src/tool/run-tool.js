@@ -1,8 +1,10 @@
 // A run opened on its own: the same view the case shows for its selected run.
 import css from "./styles.css?inline";
-import { mountRunView } from "./run-view.js";
+import { mountRunView, withTasks } from "./run-view.js";
 
-export default function RunTool(handle, element) {
+export default (handle, element) => withTasks(element, (tasks) => RunTool(handle, element, tasks));
+
+function RunTool(handle, element, tasks) {
   const style = document.createElement("style");
   style.textContent = css;
   const root = document.createElement("div");
@@ -11,7 +13,7 @@ export default function RunTool(handle, element) {
   element.append(style, root);
   const title = root.querySelector(".title");
   title.addEventListener("change", () => handle.change((d) => (d.title = title.value)));
-  const view = mountRunView(root.querySelector(".host"), { repo: handle.repo ?? window.repo });
+  const view = mountRunView(root.querySelector(".host"), { repo: handle.repo ?? window.repo, tasks });
   view.show(handle);
   const render = () => {
     const d = handle.doc();

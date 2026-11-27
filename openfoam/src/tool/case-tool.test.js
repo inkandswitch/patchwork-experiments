@@ -3,14 +3,17 @@
 // the same model, so they agree: the speed is typed in its unit and stays the
 // boat's speed when the unit changes, "Float at" floats at the trim shown,
 // Run and a sweep make runs at the speeds shown, and each part says whether
-// it's a closed shell.
+// it's a closed shell. The task client is a stand-in, registered as an
+// installed Tasks package would be; with none registered, the tool says it
+// needs that package and carries on once it is there.
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "../../probes/fake-repo.js";
 import { encodeGLB } from "../glb.js";
 import { boxTriangles } from "../test/box.js";
 import { initCase, CASE_TYPE } from "../protocol.js";
-import { setPackageUrl } from "../task-runs.js";
+import { installTasks, standInTasks } from "../test/tasks-stand-in.js";
 import { defaultSetup, waterProperties } from "../setup.js";
 import CaseTool from "./case-tool.js";
 
@@ -29,15 +32,13 @@ const until = async (fn, ms = 3000) => {
   }
 };
 
-let repo, handle, server, el, dispose, beating;
+let repo, handle, server, el, dispose, tasks;
 beforeEach(async () => {
-  setPackageUrl("automerge:openfoamTestPackage");
+  // a machine serving the queue, as the task client hears it
+  tasks = installTasks(standInTasks({ pools: [{ name: "Test machine", slots: 2, busy: 0 }] }));
   repo = new FakeRepo();
   const hull = repo.add({ "@patchwork": { type: "file" }, name: "box.glb", extension: "glb", content: glb });
   server = repo.add({ title: "Test queue", jobs: {} });
-  // a machine serving the queue says so every so often (task-client.js's `served`)
-  let seq = 0;
-  beating = setInterval(() => server.hear({ type: "serving", pool: "pool-1", name: "Test machine", slots: 2, busy: 0, from: "test-pool", seq: seq++ }), 50);
   const doc = { "@patchwork": { type: CASE_TYPE } };
   initCase(doc, defaultSetup());
   doc.hull = { url: hull.url };
@@ -48,12 +49,12 @@ beforeEach(async () => {
   document.body.append(el);
   dispose = CaseTool(handle, el);
   // the hull is read and measured (prepare waits 120 ms)
-  await until(() => !el.querySelector(".run").disabled);
+  await until(() => el.querySelector(".run")?.disabled === false);
 });
 afterEach(() => {
-  clearInterval(beating);
   dispose?.();
   el.remove();
+  getRegistry("patchwork:library").unregister("tasks-next");
 });
 
 const $ = (s) => el.querySelector(s);
@@ -123,12 +124,16 @@ describe("running from the case tool", () => {
     await until(() => handle.doc().runs.length === 1);
     const run = (await repo.find(handle.doc().runs[0])).doc();
     expect(run.setup.speed).toEqual({ value: 7.5, unit: "kn" });
-    expect(Object.keys(server.doc().jobs)).toEqual(handle.doc().runs);
-    await until(() => (repo.handles.get(handle.doc().runs[0]).doc().task));
+    // asked of the case's queue, keyed by the run, naming this package's run code from where the model was loaded
+    const runUrl = handle.doc().runs[0];
+    await until(() => repo.handles.get(runUrl).doc().task);
+    expect(tasks.asked).toEqual([{ queueUrl: server.url, importUrl: `/${encodeURIComponent("automerge:openfoamTestPackage")}/daemon/run-task.mjs`, input: { run: runUrl }, key: runUrl }]);
+    expect(tasks.froms.at(-1)).toMatch(/\/src\/case-model\.js$/);
   });
   it("shows who serves the queue, heard", async () => {
-    await until(() => /served by Test machine \(2 at once\)/.test($(".server-box").textContent));
+    await until(() => /served by Test machine/.test($(".server-box").textContent));
     expect($(".server-box").textContent).toContain("Test queue");
+    expect($(".server-box").textContent).toContain("idle");
   });
   it("Cancel on a waiting run cancels its task; the run reads cancelled though its doc still says queued", async () => {
     $(".run").click();
@@ -136,12 +141,8 @@ describe("running from the case tool", () => {
     const runUrl = handle.doc().runs[0];
     await until(() => !el.querySelector(".live-host .cancel").hidden);
     el.querySelector(".live-host .cancel").click();
-    const task = repo.handles.get(repo.handles.get(runUrl).doc().task);
-    // the stop is a record in the task's list, with no pool: nobody ever took it
-    await until(() => task.doc().runs.length === 1);
-    expect(task.doc().runs[0]).toMatchObject({ status: "cancelled" });
-    expect(task.doc().runs[0].pool).toBeUndefined();
-    expect(server.doc().jobs).toEqual({});
+    await until(() => tasks.stops.length === 1);
+    expect(tasks.stops).toEqual([runUrl]);
     expect(repo.handles.get(runUrl).doc().status).toBe("queued");
     // the views read it from the task: it is finished, cancelled before it started
     await until(() => /cancelled/.test($(".runs-table").textContent));
@@ -158,5 +159,28 @@ describe("running from the case tool", () => {
       { value: 3, unit: "m/s" },
       { value: 4, unit: "m/s" },
     ]);
+  });
+});
+
+describe("without the Tasks package", () => {
+  it("says the tool needs it and does nothing else; once it is installed, the tool carries on", async () => {
+    getRegistry("patchwork:library").unregister("tasks-next");
+    const other = document.createElement("div");
+    const close = CaseTool(handle, other);
+    expect(other.textContent).toBe("OpenFOAM needs the Tasks package, which is not installed here.");
+    expect(other.querySelector(".openfoam")).toBeNull();
+    installTasks(tasks);
+    await until(() => other.querySelector(".openfoam .run"));
+    expect(other.textContent).not.toContain("needs the Tasks package");
+    close();
+    expect(other.childNodes.length).toBe(0);
+  });
+  it("closed before the package arrives, mounts nothing when it does", async () => {
+    getRegistry("patchwork:library").unregister("tasks-next");
+    const other = document.createElement("div");
+    CaseTool(handle, other)();
+    installTasks(tasks);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(other.childNodes.length).toBe(0);
   });
 });

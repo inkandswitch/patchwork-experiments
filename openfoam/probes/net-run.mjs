@@ -25,20 +25,19 @@
 // --state is the host's state directory (a new one under the system's temp
 // directory unless given; removed at the end unless --keep). The package url
 // the runs' tasks name is made up: the host is given this directory for it.
+// This process is not a pool and has no registry: it imports the task client
+// from the tasks package's Node build, beside TASKS_HOST.
 
 import { readFileSync, mkdtempSync, rmSync, existsSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn, execFileSync } from "node:child_process";
 import { Repo, initSubduction } from "@automerge/automerge-repo";
 import { glbTriangles } from "../src/hull/mesh-read.js";
 import { prepareHull } from "../src/hull/prepare.js";
 import { defaultSetup, normalizeSetup } from "../src/setup.js";
-import { newRun, requestFinish, isTerminal, decodeLayer, RUN_CODE } from "../src/protocol.js";
-import { askRun, cancelRun, setPackageUrl, hearServing, findWhenThere, MACHINE_STOPPED, NOT_RESTARTED } from "../src/task-runs.js";
-import { served } from "../src/task-client.js";
-import { taskState, allHeard, LAPSE_MS } from "../src/task-rules.js";
+import { newRun, requestFinish, decodeLayer, RUN_CODE } from "../src/protocol.js";
 import { internalize } from "../src/segments.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -46,6 +45,8 @@ const PKG = resolve(HERE, "..");
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), []));
 const TASKS_HOST = resolve(process.env.TASKS_HOST ?? join(PKG, "../tasks/dist-node/host.mjs"));
 if (!existsSync(TASKS_HOST)) throw new Error(`no tasks host at ${TASKS_HOST}: set TASKS_HOST`);
+const tasks = await import(pathToFileURL(join(dirname(TASKS_HOST), "task-client.mjs")).href);
+const { cancelRun, hearServing, findWhenThere, served, taskState, allHeard, LAPSE_MS, MACHINE_STOPPED, NOT_RESTARTED, isRunEnded: isTerminal } = tasks;
 const SYNC = args.sync ?? process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.inkandswitch.com";
 const STATE = resolve(args.state ?? mkdtempSync(join(tmpdir(), "openfoam-net-")));
 const CORES = String(args.cores ?? 4);
@@ -108,7 +109,6 @@ function startHost(queueArgs) {
 
 await initSubduction();
 const repo = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
-setPackageUrl(PACKAGE);
 const glb = readFileSync(join(PKG, "../naval/src/test/fixtures/camber/narrow-transom.glb"));
 const { triangles } = glbTriangles(glb);
 const prep = prepareHull(triangles, {});
@@ -118,7 +118,8 @@ let queueUrl;
 async function ask(title, setupPatch = {}, hull = { stl: prep.stl, info: prep.info, warnings: prep.warnings }) {
   const setup = normalizeSetup({ ...defaultSetup(), mode: "double-body", mesh: "coarse", speed: { value: 6, unit: "kn" }, stop: "iterations", iterations: 2000, ...setupPatch });
   const run = await repo.create2(newRun({ caseUrl: "automerge:net-probe", serverUrl: queueUrl, setup, hull: { ...hull, source: { title: "narrow-transom.glb" } }, by: "net probe", now: Date.now(), title: `net probe · ${title}` }));
-  const taskUrl = await askRun(repo, queueUrl, run, RUN_CODE);
+  const { taskUrl } = await tasks.ask(repo, queueUrl, { importUrl: `/${encodeURIComponent(PACKAGE)}/${RUN_CODE}`, input: { run: run.url }, key: run.url });
+  run.change((d) => void (d.task = taskUrl));
   await repo.flush?.();
   say(`asked for "${title}": run ${run.url}, task ${taskUrl}`);
   let last = "";
@@ -166,7 +167,7 @@ try {
     const { run, taskUrl } = await ask("end to end", { iterations: 150 });
     const d = await until(() => ended(run.doc()) && run.doc(), 900_000, "the run to end");
     let layers = 0;
-    for (const url of Object.values(d.layers ?? {})) if (decodeLayer(await internalize(repo, (await findWhenThere(repo, url)).doc()))?.positions?.length) layers++;
+    for (const url of Object.values(d.layers ?? {})) if (decodeLayer(await internalize(repo, (await findWhenThere(repo, url)).doc(), { find: findWhenThere }))?.positions?.length) layers++;
     check("run: a case runs end to end (done, R_T, every layer readable here)", d.status === "done" && d.summary?.Rt > 0 && layers > 0 && layers === Object.keys(d.layers).length, { status: d.status, error: d.error, Rt: d.summary?.Rt, layers });
     const t = await taskWhen(taskUrl, 1, 30_000, "the task to end");
     check("run: its task succeeded, once, with a small result", taskState(t, allHeard) === "succeeded" && t.runs.length === 1 && t.runs[0].result?.status === "done", t.runs);

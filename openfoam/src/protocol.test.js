@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { newRun, packChunk, unpackChunks, encodeLayer, decodeLayer, requestFinish, stagesFor, runIdOf, markStopped, markInterrupted, STATUSES, isTerminal } from "./protocol.js";
-import { MACHINE_STOPPED, NOT_RESTARTED, STOP_REASONS } from "./task-runs.js";
+import { newRun, packChunk, unpackChunks, encodeLayer, decodeLayer, requestFinish, stagesFor, runIdOf, markStopped, markInterrupted } from "./protocol.js";
 import { defaultSetup } from "./setup.js";
+import { standInTasks } from "./test/tasks-stand-in.js";
 
 describe("a run", () => {
   it("starts queued with every stage pending", () => {
@@ -21,9 +21,11 @@ describe("a run", () => {
   it("is named by its document id", () => expect(runIdOf("automerge:abc")).toBe("abc"));
 });
 
-// What a stopped or interrupted run writes is the kit's (src/task-runs.js,
-// tested in the tasks package); this package adds what its flow volume says.
+// What a stopped or interrupted run writes is the task client's (a stand-in
+// here, which marks what it was asked); this package adds what its flow
+// volume says.
 describe("a run told to stop", () => {
+  const tasks = standInTasks();
   const solving = () => {
     const r = newRun({ caseUrl: "c", serverUrl: "s", setup: defaultSetup(), hull: {}, now: 1 });
     r.status = "solving";
@@ -31,44 +33,31 @@ describe("a run told to stop", () => {
     r.stages[1].status = "running";
     return r;
   };
-  it("a run going on: the kit's write (cancelled says cancelled, and the stage it was on stopped)", () => {
+  it("a run going on: the task client's write", () => {
     const r = solving();
-    markStopped(r, "cancelled", 9);
-    expect([r.status, r.error, r.finishedAt]).toEqual(["cancelled", null, 9]);
-    expect(r.stages.map((s) => s.status).slice(0, 3)).toEqual(["done", "failed", "pending"]);
-    expect(r.stages[1].note).toBe("cancelled");
+    markStopped(tasks, r, "cancelled", 9);
+    expect([r.status, r.stoppedFor]).toEqual(["solving", "cancelled"]);
   });
-  it("a finished run keeps its status; only a volume being kept says it wasn't; yielded writes nothing", () => {
-    for (const reason of STOP_REASONS) {
+  it("a finished run keeps its status; only a volume being kept says it wasn't; yielded is the task client's", () => {
+    for (const reason of tasks.STOP_REASONS) {
       const r = solving();
       r.status = "done";
       r.stages.find((s) => s.id === "solve").status = "done";
       r.stages[1].status = "done";
       r.volume = { status: "posting" };
       r.stages.push({ id: "volume", status: "running" });
-      markStopped(r, reason, 9);
+      markStopped(tasks, r, reason, 9);
       expect(r.status).toBe("done");
-      expect([r.volume.status, r.stages.at(-1).status]).toEqual(reason === "yielded" ? ["posting", "running"] : ["failed", "failed"]);
+      expect([r.volume.status, r.stages.at(-1).status, r.stoppedFor]).toEqual(reason === "yielded" ? ["posting", "running", "yielded"] : ["failed", "failed", undefined]);
     }
   });
-  it("taken up again after an interruption: failed, not solved again; an ending already written stands, and a volume being kept says it wasn't", () => {
+  it("taken up again after an interruption: the task client's write for a run going on; a finished run keeping its volume says it wasn't kept", () => {
     const r = solving();
-    markInterrupted(r, 9);
-    expect([r.status, r.error, r.stages[1].status]).toEqual(["failed", NOT_RESTARTED, "failed"]);
-    const stopped = solving();
-    markStopped(stopped, "stopping", 5);
-    markInterrupted(stopped, 9);
-    expect([stopped.status, stopped.error, stopped.finishedAt]).toEqual(["failed", MACHINE_STOPPED, 5]);
+    markInterrupted(tasks, r, 9);
+    expect(r.interrupted).toBe(true);
     const keeping = { ...solving(), status: "done", volume: { status: "posting" } };
-    markInterrupted(keeping, 9);
-    expect([keeping.status, keeping.volume.status]).toEqual(["done", "failed"]);
-  });
-});
-
-describe("statuses", () => {
-  it("queued, this package's working ones, and the kit's endings", () => {
-    expect(STATUSES).toEqual(["queued", "meshing", "solving", "post", "done", "failed", "cancelled"]);
-    expect(STATUSES.filter(isTerminal)).toEqual(["done", "failed", "cancelled"]);
+    markInterrupted(tasks, keeping, 9);
+    expect([keeping.status, keeping.volume.status, keeping.interrupted]).toEqual(["done", "failed", undefined]);
   });
 });
 

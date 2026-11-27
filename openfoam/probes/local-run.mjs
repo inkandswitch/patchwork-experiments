@@ -13,11 +13,13 @@
 //
 // --finish-after N asks for "finish now" once the solver passes iteration N;
 // --cancel-after N cancels then (aborts the signal, as a cancelled task's is). Default hull: naval's camber fixture
-// narrow-transom.glb (a 12 m sloop hull, open transom).
+// narrow-transom.glb (a 12 m sloop hull, open transom). The runner is handed
+// the task client from the tasks package's Node build (beside TASKS_HOST, or
+// ../tasks/dist-node): this process is not a pool and has no registry.
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { Repo, initSubduction } from "@automerge/automerge-repo";
 import { glbTriangles } from "../src/hull/mesh-read.js";
@@ -29,6 +31,7 @@ import { foamEnvironment, defaultCores } from "../daemon/foam.mjs";
 import { runJob } from "../daemon/runner.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const tasks = await import(pathToFileURL(join(dirname(process.env.TASKS_HOST ?? join(HERE, "../../tasks/dist-node/host.mjs")), "task-client.mjs")).href);
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), []));
 const glb = resolve(args.glb ?? join(HERE, "../../naval/src/test/fixtures/camber/narrow-transom.glb"));
 const mode = args.mode ?? "double-body";
@@ -83,7 +86,7 @@ h.on("change", () => {
 const work = resolve(args.work ?? join(tmpdir(), "openfoam-probe"));
 mkdirSync(work, { recursive: true });
 const env = foamEnvironment({});
-const status = await runJob({ repo, handle: h, env, workDir: work, cores: defaultCores(), daemon: { host: "local" }, say: (m) => console.log("  ·", m), signal: stop.signal });
+const status = await runJob({ tasks, repo, handle: h, env, workDir: work, cores: defaultCores(), daemon: { host: "local" }, say: (m) => console.log("  ·", m), signal: stop.signal });
 const d = h.doc();
 console.log("\nstatus", status, d.error ?? "");
 for (const s of d.stages) console.log(`  ${s.status.padEnd(8)} ${s.id.padEnd(22)} ${s.startedAt && s.endedAt ? `${((s.endedAt - s.startedAt) / 1000).toFixed(1)}s` : ""}  ${s.note ?? ""}`);
@@ -99,7 +102,7 @@ if (d.summary) {
     Re: s.Re.toExponential(3), Fn: s.Fn.toFixed(3), yPlus: s.yPlus, iterations: s.iterations, power: (s.power / 1000).toFixed(2) + " kW",
   });
   for (const [name, url] of Object.entries(d.layers)) {
-    const L = decodeLayer(await internalize(repo, (await repo.find(url)).doc()));
+    const L = decodeLayer(await internalize(repo, (await repo.find(url)).doc(), { find: (rp, u) => rp.find(u) }));
     const sizes = Object.entries(L.fields).map(([k, v]) => `${k}[${L.ranges[k]?.map((x) => x.toPrecision(3)).join("…")}]`);
     console.log(`  layer ${name.padEnd(12)} ${L.kind} ${L.positions.length / 3} pts ${L.indices ? L.indices.length / 3 + " tris" : L.counts.length + " lines"} ${sizes.join(" ")}`);
   }

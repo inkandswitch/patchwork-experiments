@@ -14,8 +14,7 @@ import { run as runFoam } from "./foam.mjs";
 import { datTail, forceRow, residualColumns, parseCheckMesh, parseLayers } from "./parse.mjs";
 import { readLayers, summarize } from "./results.mjs";
 import { normalizeSetup } from "../src/setup.js";
-import { packChunk, runIdOf, isTerminal, stagesFor, markStopped } from "../src/protocol.js";
-import { STOP_REASONS } from "../src/task-runs.js";
+import { packChunk, runIdOf, stagesFor, markStopped } from "../src/protocol.js";
 import { settled } from "../src/convergence.js";
 import { getBytes, externalize, serverWatch } from "../src/segments.js";
 import { keepVolume } from "./volume.mjs";
@@ -48,6 +47,7 @@ function readFrom(file, pos) {
 
 /**
  * @param {object} o
+ * @param {object} o.tasks        the task client (the Tasks package's library): when a run has ended, how a stop is written, how a doc is found
  * @param {import("@automerge/automerge-repo").Repo} o.repo
  * @param {import("@automerge/automerge-repo").DocHandle} o.handle   the run doc
  * @param {object} o.env          foamEnvironment()
@@ -59,9 +59,9 @@ function readFrom(file, pos) {
  * @param {(urls: string[]) => Promise<string[]>} [o.verify]  a second peer's check of docs the server didn't acknowledge (src/segments.js)
  * @returns {Promise<"done"|"failed"|"cancelled"|"stopped">}  "stopped": told to stop by `signal` (the run doc says why, unless it yielded)
  */
-export async function runJob({ repo, handle, env, workDir, cores, daemon, say = () => {}, signal = null, verify = null }) {
+export async function runJob({ tasks, repo, handle, env, workDir, cores, daemon, say = () => {}, signal = null, verify = null }) {
   const run0 = handle.doc();
-  if (isTerminal(run0.status)) {
+  if (tasks.isRunEnded(run0.status)) {
     // stopped while keeping its volume: say so, rather than "posting" for ever
     if (run0.volume?.status === "posting")
       handle.change((d) => {
@@ -108,10 +108,10 @@ export async function runJob({ repo, handle, env, workDir, cores, daemon, say = 
   handle.on("change", watch);
   const onAbort = () => {
     if (stopKind) return;
-    const reason = STOP_REASONS.includes(signal.reason) ? signal.reason : "stopping";
+    const reason = tasks.STOP_REASONS.includes(signal.reason) ? signal.reason : "stopping";
     say(`run ${id}: ${reason}`);
     killed = current?.kill() ?? null;
-    handle.change((d) => markStopped(d, reason, now()));
+    handle.change((d) => markStopped(tasks, d, reason, now()));
     stopKind = reason;
   };
   if (signal?.aborted) onAbort();
@@ -180,7 +180,7 @@ export async function runJob({ repo, handle, env, workDir, cores, daemon, say = 
 
   try {
     // inline, or in segment docs when it's big (src/segments.js)
-    stl = await getBytes(repo, run0.hull?.stl).catch((err) => {
+    stl = await getBytes(repo, run0.hull?.stl, { find: tasks.findWhenThere }).catch((err) => {
       throw new Error(`the run's hull STL didn't arrive: ${err.message}`);
     });
     if (!info || !(stl instanceof Uint8Array) || !stl.byteLength) throw new Error("the run has no hull (its STL is missing)");
@@ -335,7 +335,7 @@ export async function runJob({ repo, handle, env, workDir, cores, daemon, say = 
       urls[layer.name] = h.url;
     }
     // the layer docs are new: let them reach the sync server before their links do
-    // (readers retry too, src/task-runs.js findWhenThere; this keeps the first look from missing them)
+    // (readers retry too, the task client's findWhenThere; this keeps the first look from missing them)
     const there = await onServer.wait(made, { timeoutMs: 120_000, ackMs: 30_000, verify });
     if (there.ok === null) await new Promise((r) => setTimeout(r, 2500));
     else if (!there.ok) say(`run ${id}: the server hasn't acknowledged ${there.missing.length} layer doc(s); readers will retry`);

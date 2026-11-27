@@ -11,9 +11,8 @@
 // another run if you pick one), and how it ran. A run that failed or was
 // stopped opens on how it ran, with what went wrong above.
 
-import { unpackChunks, decodeLayer, requestFinish, isTerminal, FIELD_INFO } from "../protocol.js";
-import { cancelRun, aheadOf, shownRun, findWhenThere } from "../task-runs.js";
-import { watch } from "../task-client.js";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { unpackChunks, decodeLayer, requestFinish, FIELD_INFO } from "../protocol.js";
 import { formatSpeed, formatDuration, MODE_LABELS } from "../setup.js";
 import { weightOf } from "../results.js";
 import { lineChart, seriesColors } from "./charts.js";
@@ -58,9 +57,33 @@ export function residualSeries(table) {
 }
 
 /**
+ * Mounts a tool with the task client (the Tasks package's library, from the
+ * registry), kept until it closes. Until the package is here the tool says so
+ * and nothing else. `mount(tasks)` returns how to unmount.
+ */
+export function withTasks(element, mount) {
+  const libraries = getRegistry("patchwork:library");
+  const note = Object.assign(document.createElement("p"), { className: "hint", textContent: "OpenFOAM needs the Tasks package, which is not installed here." });
+  if (!libraries.has("tasks-next")) element.append(note);
+  let open = true;
+  let unmount = null;
+  libraries.loadWhenReady("tasks-next").then(({ module: tasks }) => {
+    if (!open) return;
+    note.remove();
+    unmount = mount(tasks);
+  });
+  return () => {
+    open = false;
+    note.remove();
+    unmount?.();
+  };
+}
+
+/**
  * @param {HTMLElement} host
  * @param {object} o
  * @param {object} o.repo
+ * @param {object} o.tasks  the task client
  * @param {boolean} [o.showTitle]  name the run (where the view sits among others; a run opened alone has its title above)
  * @param {(attitude: { sinkage: number, trim: number }) => void} [o.onUseAttitude]  offered on a double-body run's predicted running attitude
  * @param {(run: object) => void} [o.onReuse]    "Set up the case from this run"
@@ -69,7 +92,8 @@ export function residualSeries(table) {
  * @param {(url: string) => object|null} [o.runDoc]  a run's doc, by url (for the comparison)
  * @param {(run: object) => string|null} [o.variant]  the letter of a run's hull variation
  */
-export function mountRunView(host, { repo, onUseAttitude = null, showTitle = false, onReuse = null, onRerun = null, others = null, runDoc = null, variant = null }) {
+export function mountRunView(host, { repo, tasks, onUseAttitude = null, showTitle = false, onReuse = null, onRerun = null, others = null, runDoc = null, variant = null }) {
+  const { cancelRun, aheadOf, shownRun, findWhenThere, watch, isRunEnded: isTerminal } = tasks;
   const root = document.createElement("div");
   root.className = "flow run-view";
   root.innerHTML = `
@@ -383,7 +407,7 @@ export function mountRunView(host, { repo, onUseAttitude = null, showTitle = fal
     if (!done) return;
     for (const [name, u] of Object.entries(run.layers ?? {})) {
       try {
-        layers[name] = decodeLayer(await internalize(repo, (await findWhenThere(repo, u)).doc()));
+        layers[name] = decodeLayer(await internalize(repo, (await findWhenThere(repo, u)).doc(), { find: findWhenThere }));
       } catch {
         /* not here yet */
       }

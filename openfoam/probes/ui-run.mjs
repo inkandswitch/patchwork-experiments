@@ -1,10 +1,12 @@
 // The case tool in headless Chrome: the BUILT package (dist/) on an
-// in-memory repo (probes/ui-probe.html), with a real camber GLB as the hull
-// and, when given, real runs dumped by probes/local-run.mjs --dump.
+// in-memory repo (probes/ui-probe.html), with a real camber GLB as the hull,
+// the task client from the tasks package's built dist (../tasks/dist), and,
+// when given, real runs dumped by probes/local-run.mjs --dump.
 //
 //   pnpm build && node probes/ui-run.mjs [--done run.json] [--done2 run2.json] [--shots dir] [--show]
 //
-// Checks: the hull is read and measured; the pre-flight figures; Run makes a
+// Checks: before the Tasks package is installed, the tool says it needs it,
+// and carries on when it arrives; the hull is read and measured; the pre-flight figures; Run makes a
 // run doc (frozen setup + STL) and asks the server's queue for it; a run
 // mid-solve shows its stages and charts; a finished run shows its figures
 // and each plot; two finished runs at different speeds draw a resistance
@@ -32,9 +34,10 @@ mkdirSync(runs, { recursive: true });
 if (DONE) copyFileSync(DONE, join(runs, "done.json"));
 if (DONE2) copyFileSync(DONE2, join(runs, "done2.json"));
 if (!existsSync(join(PKG, "dist/index.js"))) throw new Error("build first: pnpm build");
+if (!existsSync(join(PKG, "../tasks/dist/index.js"))) throw new Error("build the tasks package first: pnpm build in ../tasks");
 
 const W = 1300, H = 950;
-const b = await browser({ root: PKG, port: Number(process.env.PROBE_PORT) || 4795, cdp: Number(process.env.PROBE_CDP) || 9795, page: "/probes/ui-probe.html", width: W, height: H, show: process.argv.includes("--show"), timeout: 300_000, mounts: { "/hulls/": HULLS, "/runs/": runs, "/automerge:openfoamProbePackage/": PKG } });
+const b = await browser({ root: PKG, port: Number(process.env.PROBE_PORT) || 4795, cdp: Number(process.env.PROBE_CDP) || 9795, page: "/probes/ui-probe.html", width: W, height: H, show: process.argv.includes("--show"), timeout: 300_000, mounts: { "/hulls/": HULLS, "/runs/": runs, "/automerge:openfoamProbePackage/": PKG, "/tasks/": resolve(PKG, "../tasks/dist") } });
 const js = (expr) => b.js(expr);
 const P = (e) => js(`window.__p.${e}`);
 const until = (expr, ms = 20_000) => b.waitFor(expr, ms, 60);
@@ -53,7 +56,11 @@ async function shot(name, { w = W, h = H, scroll = null } = {}) {
 
 try {
   check("page set up", (await until("window.__ready === true", 20_000)) && (await P("errors")).length === 0, await P("errors"));
-  await P("setup()");
+  await P("setup({ withoutTasks: true })");
+  await until(`document.querySelector("#host").innerText.trim().length > 0`, 10_000);
+  const without = await js(`document.querySelector("#host").innerText.trim()`);
+  check("without the Tasks package, the tool says it needs it and shows nothing else", without === "OpenFOAM needs the Tasks package, which is not installed here." && !(await js(`!!document.querySelector(".openfoam")`)), without);
+  await P("installTasks()");
   const measured = await until("window.__p.figures().length > 5", 20_000);
   const fig = await P("figures()");
   report.figures = fig;
@@ -100,6 +107,7 @@ try {
   await until("!!window.__p.state().task", 10_000);
   const st2 = await P("state()");
   check("Run makes a run doc (queued, STL frozen, setup copied) and asks the queue for it, keyed by the run", st2.run0?.status === "queued" && st2.run0.stl > 84 && st2.requests[0] === st2.runs[0] && /^automerge:/.test(st2.task ?? "") && st2.selected === st2.runs[0] && Math.abs(st2.run0.info - 9.91) < 0.01, st2);
+  check("the task names this package's run code, not the Tasks package's", st2.importUrl === `/${encodeURIComponent("automerge:openfoamProbePackage")}/daemon/run-task.mjs`, st2.importUrl);
   check("and keeps what it was made from: the hull's geometry digest and heads, the tool's version", /^[0-9a-f]{64}$/.test(st.run0.geometry ?? "") && st.run0.triangles > 100 && Array.isArray(st.run0.heads) && st.run0.made === "0.1.0", st.run0);
   check("a run that keeps its volume says so, and has a stage for it", st.run0.setup.keepVolume === true && st.run0.stageIds.at(-1) === "volume", st.run0.stageIds);
   check("Run switches to the Runs tab", (await P("tabs()")).selected === "runs", await P("tabs()"));
