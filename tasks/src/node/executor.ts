@@ -1,13 +1,9 @@
 // The pool's run workers in a Node process: each a worker thread running
-// ../run-worker.ts (built as run-thread.mjs), with a Repo of its own on disk.
+// ../run-worker.ts (built as run-thread.mjs), each with a pipe to the host's Repo.
 //
-// A thread's Repo keeps its documents in <data-dir>/slots/<n>, a directory
-// no other live thread uses: two Repos writing one directory would spoil it.
-// The pool asks for threads as it needs them and ends a stopped one at once,
-// so a replacement can start before the old one has gone; the old one's
-// directory is free again only when its 'exit' has fired, and the new one
-// takes the lowest number nobody holds. So there can be a few more
-// directories than slots, and never two live threads on one.
+// Each thread is handed its end of a pipe to the host's Repo (../pipe.ts) in
+// its settings, its only way to documents, and the pipe is ended with its
+// 'exit'.
 //
 // Each thread's heap has a ceiling (`maxHeapMb`). A task that reaches it ends
 // its own thread, which the pool records as a lost run; without one, it would
@@ -16,8 +12,7 @@
 // Each thread is told the host's registry (../registry-snapshot.ts) in its
 // settings, and again whenever the host's registry changes (host.ts).
 
-import { Worker } from 'node:worker_threads';
-import { join } from 'node:path';
+import { Worker, type MessagePort as NodePort } from 'node:worker_threads';
 import type { Executor, Job, RunWorker, StopReason, WorkerEvents } from '../pool';
 import type { FromRunWorker, PluginsHere, RunWorkerSettings, ToRunWorker } from '../run-worker';
 import { Latest } from '../registry-snapshot';
@@ -25,12 +20,10 @@ import { Latest } from '../registry-snapshot';
 export interface NodeExecutorOptions {
   /** The run worker's script: run-thread.mjs beside the host. */
   script: URL;
-  /** Holds `slots/<n>`, one directory for each thread's Repo. */
-  dataDir: string;
-  /** What every thread is told, but for where its Repo keeps documents. */
-  settings: RunWorkerSettings;
-  /** The task's document as the pool has it, saved: handed to the thread with the job (see `ToRunWorker`). */
-  taskBytes(taskUrl: Job['taskUrl']): Promise<Uint8Array | undefined>;
+  /** What every thread is told, but for its pipe and the registry. */
+  settings: Omit<RunWorkerSettings, 'link' | 'plugins'>;
+  /** A new pipe to the host's Repo for a thread that is starting. */
+  link(): RunWorkerLink;
   /** For a person watching: a line for each thread started and ended and each run handed over and over. */
   say?(line: string): void;
   /** The most each thread's heap may grow to, in megabytes. */
@@ -40,8 +33,17 @@ export interface NodeExecutorOptions {
 /** A thread's heap ceiling unless the host is told otherwise: what V8 allows a process by default on a 64-bit machine. */
 export const DEFAULT_MAX_HEAP_MB = 4096;
 
+/** A run thread's pipe to the host's Repo, as the host makes it (host.ts). */
+export interface RunWorkerLink {
+  /** The thread's end, which is transferred to it. */
+  port: MessagePort;
+  end(): void;
+}
+
 export class NodeExecutor implements Executor {
-  private readonly held = new Set<number>();
+  /** Threads started, which numbers them; and how many are alive. */
+  private started = 0;
+  private alive = 0;
   /** The host's registry as it last changed: every new thread starts with it, and every live one is told a newer one. */
   readonly plugins = new Latest<PluginsHere>({ snapshot: [] });
 
@@ -49,29 +51,24 @@ export class NodeExecutor implements Executor {
 
   /** How many threads are alive: from start until their 'exit'. */
   get threads() {
-    return this.held.size;
+    return this.alive;
   }
 
   start(events: WorkerEvents): RunWorker {
-    const { script, dataDir, settings, taskBytes, say, maxHeapMb = DEFAULT_MAX_HEAP_MB } = this.options;
-    let n = 0;
-    while (this.held.has(n)) {
-      n++;
-    }
-    // Held once there is a thread, so that one that could not be made (the
-    // pool fails its run) does not hold a number that no 'exit' will free.
+    const { script, settings, say, maxHeapMb = DEFAULT_MAX_HEAP_MB } = this.options;
+    const n = this.started++;
     const worker = new Worker(script, {
       name: `task-run-${n}`,
       resourceLimits: { maxOldGenerationSizeMb: maxHeapMb },
     });
-    this.held.add(n);
-    say?.(`thread ${n} started (${this.held.size} alive)`);
+    this.alive++;
+    say?.(`thread ${n} started (${this.alive} alive)`);
+    const link = this.options.link();
     let job: Job | null = null;
     const tell = (message: ToRunWorker) => worker.postMessage(message);
-    tell({
-      type: 'settings',
-      settings: { ...settings, plugins: this.plugins.value, place: { ...settings.place, storageDir: join(dataDir, 'slots', String(n)) } },
-    });
+    worker.postMessage({ type: 'settings', settings: { ...settings, plugins: this.plugins.value, link: link.port } } satisfies ToRunWorker, [
+      link.port as unknown as NodePort,
+    ]);
     const unfollow = this.plugins.follow((plugins) => tell({ type: 'plugins', plugins }));
 
     worker.on('message', (message: FromRunWorker) => {
@@ -98,37 +95,25 @@ export class NodeExecutor implements Executor {
     worker.on('error', (error) => events.log(`its worker crashed: ${error?.message ?? error}`));
     worker.on('exit', (code) => {
       unfollow();
-      this.held.delete(n);
-      say?.(`thread ${n} ended (code ${code}; ${this.held.size} alive)`);
+      link.end();
+      this.alive--;
+      say?.(`thread ${n} ended (code ${code}; ${this.alive} alive)`);
       events.exit();
     });
-
-    // A job goes with the task's document, which takes a moment to read. What
-    // is said after it waits its turn, so that neither an abort nor a settle overtakes its job.
-    let said = Promise.resolve();
-    const inTurn = (message: () => Promise<ToRunWorker> | ToRunWorker) => {
-      said = said
-        .then(async () => tell(await message()))
-        .catch((error) => console.error('tasks: telling a run worker something failed', error));
-    };
 
     return {
       run: (given) => {
         job = given;
         say?.(`run ${short(given)} of ${given.key} handed to thread ${n}`);
-        inTurn(async () => ({
-          type: 'job',
-          job: given,
-          task: await taskBytes(given.taskUrl).catch(() => undefined),
-        }));
+        tell({ type: 'job', job: given });
       },
       abort: (reason: StopReason) => {
         say?.(`run ${short(job)} told to stop: ${reason}`);
-        inTurn(() => ({ type: 'abort', reason }));
+        tell({ type: 'abort', reason });
       },
       settle: (runId: string) => {
         say?.(`run ${runId.slice(0, 8)} settled`);
-        inTurn(() => ({ type: 'settled', run: runId }));
+        tell({ type: 'settled', run: runId });
       },
       terminate: () => {
         void worker.terminate();

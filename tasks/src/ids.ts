@@ -40,8 +40,5 @@ export const TRAY_COMPONENT_ID = 'task-tray-next';
  */
 export const WAIT_TASK_PATH = 'dist/tasks/wait.js';
 
-// The pool's worker keeps its documents in a database of its own, rather than the site's.
-export const TASKS_DATABASE = 'patchwork-tasks';
-
-/** How the peer id of a browser worker's Repo starts: the site's Repo offers such a peer nothing (browser/pool-host.ts). */
+/** How the peer id of a worker's Repo starts: its host's Repo offers such a peer nothing (pipe.ts). */
 export const WORKER_PEER = 'task-worker-';

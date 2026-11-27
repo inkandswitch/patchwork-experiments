@@ -12,13 +12,15 @@
 // runs the same on a laptop or on a server anywhere. The pool (../pool.ts)
 // runs in this process's main thread with a Repo of its own, and each task's
 // code runs in a worker thread it can end whatever the code is doing (see
-// executor.ts). --workers is how many run at once. --max-heap-mb is the
+// executor.ts), which reaches documents only through a pipe to this process's
+// Repo (../pipe.ts): this Repo alone has the disk and the socket.
+// --workers is how many run at once. --max-heap-mb is the
 // most each thread's heap may grow to: a task that needs more ends its own
 // thread, and its run is recorded lost, instead of ending this process.
 //
-// Everything is kept in --data-dir: the pool's documents (pool/), each
-// thread's (slots/<n>/), code fetched from automerge (code/, unless
-// --code-dir says), the pool's id (pool-id), and the running host's pid
+// Everything is kept in --data-dir: the documents (pool/), code fetched
+// from automerge (code/, unless --code-dir says), the pool's id (pool-id), and
+// the running host's pid
 // (host.pid). The id is what makes the runs this pool started its own after
 // a restart: a host that comes back on the same directory records each run
 // it no longer has as lost, and the task is taken again. One host to a
@@ -27,7 +29,7 @@
 // A task says where its code is (see ../import-url.ts), and this host runs
 // whatever the tasks of its queues name, with the privileges of its user.
 //
-// Code kept in automerge is fetched through the thread's Repo and imported
+// Code kept in automerge is fetched through the thread's pipe to this Repo and imported
 // from the code directory (see package-files.ts). It runs in Node: it can
 // import its neighbours and Node's own modules, not what a browser's import
 // map would have given it.
@@ -81,6 +83,7 @@ import { Pool, type Docs } from '../pool';
 import { GRACE_MS } from '../task-rules.js';
 import type { Queue } from '../datatype';
 import { QUEUE_DATATYPE_ID } from '../ids';
+import { pipe } from '../pipe';
 import { DEFAULT_MAX_HEAP_MB, NodeExecutor } from './executor';
 import { followRegistries } from '../registry-snapshot';
 import { shareAutomerge } from './task-imports';
@@ -302,12 +305,11 @@ export async function main(argv = process.argv.slice(2)) {
   const codeDir = options.codeDir ?? join(dataDir, 'code');
   const executor = new NodeExecutor({
     script: new URL('./run-thread.mjs', import.meta.url),
-    dataDir,
-    settings: {
-      repoConfig: { syncServerUrl: options.sync },
-      place: { codeDir, local: options.local },
+    settings: { place: { codeDir, local: options.local } },
+    link: () => {
+      const { port1, port2 } = new MessageChannel();
+      return { port: port2, end: pipe(repo as any, port1 as unknown as MessagePort) };
     },
-    taskBytes: (taskUrl) => repo.export(taskUrl),
     say,
     maxHeapMb: options.maxHeapMb,
   });

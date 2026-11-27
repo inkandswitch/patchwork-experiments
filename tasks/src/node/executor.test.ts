@@ -3,8 +3,7 @@
 // The Node executor with real worker threads, each running a stand-in for
 // run-thread.mjs that does what its job's importUrl says. What is checked:
 // `exit` is said once per thread whatever ends it, `terminate` ends a thread
-// that never yields, no two live threads are given one slot directory, and
-// `settled` reaches a thread after the job it is about.
+// that never yields, and each thread is handed a pipe.
 
 import { afterAll, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -21,10 +20,10 @@ const STAND_IN = `
 import { parentPort } from 'node:worker_threads';
 parentPort.on('message', (m) => {
   if (m.type === 'settings') {
-    parentPort.postMessage({ type: 'log', message: 'dir ' + m.settings.place.storageDir });
+    parentPort.postMessage({ type: 'log', message: 'link ' + (m.settings.link.constructor.name === 'MessagePort') });
   } else if (m.type === 'job') {
     const what = m.job.importUrl;
-    if (what === 'return') parentPort.postMessage({ type: 'done', result: m.task ? m.task.length : null });
+    if (what === 'return') parentPort.postMessage({ type: 'done', result: 7 });
     if (what === 'hold') parentPort.postMessage({ type: 'log', message: 'job ' + m.job.runId });
     if (what === 'spin') for (;;) {}
     if (what === 'crash') setTimeout(() => { throw new Error('escaped'); });
@@ -53,18 +52,15 @@ const job = (importUrl: string): Job => ({
   key: 'k',
 });
 
-function executor(scriptUrl = standIn, maxHeapMb?: number, bytesAfterMs = 0) {
+/** One entry for each pipe an executor has ended. */
+const ended: string[] = [];
+
+function executor(scriptUrl = standIn, maxHeapMb?: number) {
   return new NodeExecutor({
     script: scriptUrl,
     maxHeapMb,
-    dataDir: dir,
-    settings: { repoConfig: { syncServerUrl: 'wss://nowhere.invalid' }, place: {} },
-    taskBytes: async () => {
-      if (bytesAfterMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, bytesAfterMs));
-      }
-      return new Uint8Array([1, 2, 3]);
-    },
+    settings: {},
+    link: () => ({ port: new MessageChannel().port2 as unknown as MessagePort, end: () => void ended.push('ended') }),
   });
 }
 
@@ -105,7 +101,7 @@ describe('the Node executor', () => {
     const r = recorder();
     const worker = pool.start(r.events);
     worker.run(job('return'));
-    await until(() => r.said.includes('done 3'));
+    await until(() => r.said.includes('done 7'));
     worker.terminate();
     worker.terminate();
     await r.gone;
@@ -167,7 +163,7 @@ describe('the Node executor', () => {
     const again = recorder();
     const next = pool.start(again.events);
     next.run(job('return'));
-    await until(() => again.said.includes('done 3'));
+    await until(() => again.said.includes('done 7'));
     next.terminate();
     await again.gone;
   }, 30_000);
@@ -187,43 +183,15 @@ describe('the Node executor', () => {
     }
   });
 
-  it('passes settled on after the job it is about, though the task takes a moment to read', async () => {
-    // The task's document is read before the job is told: a settle said at
-    // once would overtake the job were it not told in turn.
-    const pool = executor(standIn, undefined, 200);
+  it('hands each thread its end of a pipe in its settings, and ends the pipe with the thread', async () => {
+    ended.length = 0;
+    const pool = executor();
     const r = recorder();
     const worker = pool.start(r.events);
-    worker.run(job('hold'));
-    worker.settle('run-1');
-    await until(() => r.said.includes('log settled run-1'));
-    expect(r.said.filter((line) => /^log (job|settled) /.test(line))).toEqual(['log job run-1', 'log settled run-1']);
+    await until(() => r.said.includes('log link true'));
+    expect(ended).toEqual([]);
     worker.terminate();
     await r.gone;
-  });
-
-  it('never gives two live threads one directory: a replacement started before the old one has gone takes another', async () => {
-    const pool = executor();
-    const dirOf = (r: ReturnType<typeof recorder>) => r.said.find((line) => line.startsWith('log dir '))?.slice('log dir '.length);
-    const a = recorder();
-    const first = pool.start(a.events);
-    first.run(job('spin'));
-    await until(() => !!dirOf(a));
-    // the pool's stop path: terminate, and start the next at once
-    first.terminate();
-    const b = recorder();
-    const second = pool.start(b.events);
-    await until(() => !!dirOf(b));
-    expect(dirOf(a)).toBe(join(dir, 'slots', '0'));
-    expect(dirOf(b)).toBe(join(dir, 'slots', '1'));
-    await a.gone;
-    // once the first has gone, its directory is the lowest free one again
-    const c = recorder();
-    const third = pool.start(c.events);
-    await until(() => !!dirOf(c));
-    expect(dirOf(c)).toBe(join(dir, 'slots', '0'));
-    second.terminate();
-    third.terminate();
-    await Promise.all([b.gone, c.gone]);
-    expect(pool.threads).toBe(0);
+    expect(ended).toEqual(['ended']);
   });
 });

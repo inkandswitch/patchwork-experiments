@@ -22,11 +22,10 @@
 // pool is the tasks package, so the task client (TASKS_LIBRARY) is always
 // there: this build's own, until an installed one replaces it.
 
-import type { DocumentId, Repo } from '@automerge/automerge-repo/slim';
+import type { Repo } from '@automerge/automerge-repo/slim';
 import { getRepo, importModule, pluginMirror, setUpImportMap, type PlaceSettings } from './webworker-lib';
 import { findWhenThere } from './task-client.js';
 import { TASKS_LIBRARY, WORKER_PEER } from './ids';
-import type { RepoConfig } from './repo-config';
 import type { Job, StopReason } from './pool';
 import type { TaskContext } from './job-context';
 import type { Snapshot } from './registry-snapshot';
@@ -39,15 +38,13 @@ export interface PluginsHere {
 
 /** What a run worker is told once, before its first job. */
 export interface RunWorkerSettings {
-  /** The sync server its Repo talks to. */
-  repoConfig: RepoConfig;
-  /** Where its Repo keeps documents, a place no other live run worker uses (a database in a browser, a directory in Node), and in Node where code is found (see webworker-lib.ts). */
+  /** Its end of the pipe to its host's Repo (../pipe.ts), through which it reaches documents. */
+  link: MessagePort;
+  /** In Node, where code is found (see webworker-lib.ts). */
   place?: PlaceSettings;
   /** In a browser, the page's import map, which bare names in a task's code resolve by. */
   importMap?: unknown;
   baseURI?: string;
-  /** In a browser, its end of a pipe to the site's Repo in the page above its pool (browser/pool-host.ts), when there is one. */
-  link?: MessagePort;
   /** The pool's registry as it is when the worker starts. */
   plugins?: PluginsHere;
 }
@@ -55,12 +52,7 @@ export interface RunWorkerSettings {
 /** What is said to a run worker. */
 export type ToRunWorker =
   | { type: 'settings'; settings: RunWorkerSettings }
-  /**
-   * A job, with the task's document as the pool had it when it took the
-   * task (`Automerge.save` of it), so that the code's Repo has its own run in
-   * the task before the code is called, network or no network.
-   */
-  | { type: 'job'; job: Job; task?: Uint8Array }
+  | { type: 'job'; job: Job }
   | { type: 'abort'; reason: StopReason }
   /** The pool has held this run for a beat and nothing stops it: resolves the code's `ctx.settled`, if it is still this worker's job. */
   | { type: 'settled'; run: string }
@@ -107,7 +99,7 @@ export function serve(port: RunWorkerPort) {
         // Made at once: a run worker is started only when there is a job for it.
         const { settings } = message;
         repo = setUpImportMap(settings.importMap ?? {}, settings.baseURI ?? '')
-          .then(() => getRepo(settings.repoConfig, `${WORKER_PEER}run-${crypto.randomUUID()}`, settings.place, settings.link));
+          .then(() => getRepo(`${WORKER_PEER}run-${crypto.randomUUID()}`, settings.link, settings.place));
         repo.catch(() => {}); // said by each job that needs it
         plugins = settings.plugins ?? plugins;
         registry = setUpImportMap(settings.importMap ?? {}, settings.baseURI ?? '')
@@ -125,7 +117,7 @@ export function serve(port: RunWorkerPort) {
         running = controller;
         // Made before the code is imported, so that a settle said meanwhile counts.
         settling = settlingOf(message.job.runId, controller.signal);
-        runJob(message.job, message.task, controller.signal, settling.promise).then(
+        runJob(message.job, controller.signal, settling.promise).then(
           () => {
             if (running === controller) {
               running = null;
@@ -146,7 +138,7 @@ export function serve(port: RunWorkerPort) {
     }
   });
 
-  async function runJob(job: Job, task: Uint8Array | undefined, signal: AbortSignal, settled: Promise<void>) {
+  async function runJob(job: Job, signal: AbortSignal, settled: Promise<void>) {
     let outcome: FromRunWorker;
     // Code can go on after it has returned or thrown (a timer, a promise it
     // did not wait for), and the worker may by then have the next job: what
@@ -162,9 +154,6 @@ export function serve(port: RunWorkerPort) {
         throw new Error('its worker was handed a job before it was set up');
       }
       const docs = await repo;
-      if (task) {
-        docs.import(task, { docId: documentIdOf(job.taskUrl) });
-      }
       // what the pool's registry has, before the code can ask it
       await registry?.catch(() => {});
       const module = await importModule(job.importUrl);
@@ -289,11 +278,6 @@ export function patient(repo: Repo): Repo {
       return Reflect.set(target, name, value, target);
     },
   });
-}
-
-/** The document id an `automerge:` url names (its heads and path apart), or a bare document id itself. */
-function documentIdOf(url: string): DocumentId {
-  return url.replace(/^automerge:/, '').split(/[#/]/)[0] as DocumentId;
 }
 
 /** Resolves after `ms`, or rejects with the signal's reason as soon as it aborts, leaving no timer or listener behind. */

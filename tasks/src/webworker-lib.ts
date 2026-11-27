@@ -1,7 +1,6 @@
 import type { Repo } from '@automerge/automerge-repo/slim';
-import type { RepoConfig } from './repo-config';
-import { TASKS_DATABASE } from './ids';
 import { onOrigin } from './import-url';
+import { flushesToHost } from './pipe';
 import { mirror } from './registry-snapshot';
 import type { PluginsHere } from './run-worker';
 
@@ -10,15 +9,8 @@ import type { PluginsHere } from './run-worker';
 // A Node process brings its own in this file's place (see src/node), and the
 // run worker itself is the same code in both.
 
-/**
- * Where a run worker keeps its documents, and, in Node, where it finds code
- * (see node/webworker-lib.node.ts). Each platform reads only its own fields.
- */
+/** Where, in Node, a run thread finds code. */
 export interface PlaceSettings {
-  /** In a browser: the IndexedDB database its Repo keeps documents in, which it uses only while it holds the Web Lock of the same name. */
-  database?: string;
-  /** In Node: where its Repo keeps documents, a directory no other live Repo uses. */
-  storageDir?: string;
   /** Where code fetched from automerge is written (see node/package-files.ts). */
   codeDir?: string;
   /** Packages whose code is run from a directory here: `automerge:<package>` to a path. */
@@ -123,53 +115,23 @@ function resolveImportMap(importMap: any, baseURI: string) {
 }
 
 /**
- * A Repo for this worker: an ordinary Subduction node with a socket of its
- * own to the sync server, or, piped to the page above its pool, with that
- * pipe instead (see below).
- *
- * The pool's worker (no `place.database`) keeps its documents in the tasks
- * database (ids.ts).
- *
- * A run worker keeps its documents in a database of its own
- * (`place.database`), as a Node run thread keeps a directory of its own. Its
- * task's code may block this thread at any moment, and an IndexedDB
- * transaction left open by a blocked thread holds up every other transaction
- * on that database until the thread is ended: on the shared database that
- * would hold up the page's stops and the pool's records, so a stop could not
- * even be saved. On its own database it holds up only itself. So what a task
- * writes through `ctx.repo` reaches the page by its pipe, or with none by way
- * of the sync server. The job carries the task's own document, so a run
- * worker never needs the shared database.
- *
- * It uses that database only while it holds the Web Lock of the same name,
- * which it keeps for its whole life. A browser passes a worker's locks on only
- * once the worker has really ended, and a terminated worker spinning in a loop
- * goes on for about 2 s; so a run worker never shares its database with one
- * that is still going, whatever number the pool hands out.
- *
- * A worker under a page that holds the site's Repo is handed its end of a
- * pipe to it (`link`, browser/pool-host.ts), which its Repo takes as its only
- * network adapter, with no socket of its own (PLANS, "Piped workers have no
- * socket of their own").
+ * A Repo for this worker, which reaches documents only through `link`, its
+ * end of the pipe to its host's Repo (pipe.ts): that is its one network
+ * adapter, and it has no storage and no socket. What it keeps is kept by the
+ * host's Repo, which sends it on.
  *
  * No `signer`, on purpose: the Repo makes itself a new identity each time. The
  * tabs on an origin all sign as one peer, and a worker that did the same would
  * be relying on the server to pass a peer's ephemeral messages back to that
- * same peer's other connections. As a peer of its own it is to the pool what
- * another machine would be.
+ * same peer's other connections. As a peer of its own it is to the host's
+ * Repo what another machine would be.
  */
-export async function getRepo(config: RepoConfig, peerId: string, place: PlaceSettings = {}, link?: MessagePort) {
+export async function getRepo(peerId: string, link: MessagePort, _place?: PlaceSettings) {
   if (!importMapReady) {
     throw new Error('Import map must be configured before creating a worker repo');
   }
 
-  const { database } = place;
-  if (database) {
-    await holdForLife(database);
-  }
-
-  const { Repo, IndexedDBStorageAdapter, initializeWasm, initSubductionSync } = await getRepoModules();
-  const network = link ? [new (await (self as any).importShim('@automerge/automerge-repo-network-messagechannel')).MessageChannelNetworkAdapter(link)] : [];
+  const { Repo, MessageChannelNetworkAdapter, initializeWasm, initSubductionSync } = await getRepoModules();
 
   const [automergeWasm, subductionWasm] = await Promise.all([
     fetch('/automerge.wasm').then((r) => r.arrayBuffer()),
@@ -181,36 +143,15 @@ export async function getRepo(config: RepoConfig, peerId: string, place: PlaceSe
   console.log('Automerge & Subduction WASM initialized');
 
   const repo: Repo = new Repo({
-    storage: new IndexedDBStorageAdapter(database ?? TASKS_DATABASE),
     peerId: peerId as any,
-    subductionWebsocketEndpoints: link ? [] : [config.syncServerUrl],
-    network,
+    network: [new MessageChannelNetworkAdapter(link)],
     enableRemoteHeadsGossiping: true,
   });
 
+  flushesToHost(repo);
   (globalThis as any).repo = repo;
 
   return repo;
-}
-
-/**
- * Resolves once this worker holds the Web Lock `name`, which it then keeps
- * until it ends. A worker with no Web Locks gets no Repo: it could not know
- * that its database is its own.
- */
-function holdForLife(name: string): Promise<void> {
-  const locks = (self as unknown as { navigator?: Navigator }).navigator?.locks;
-  if (!locks) {
-    return Promise.reject(new Error('its worker has no Web Locks, so it cannot keep a database to itself'));
-  }
-  return new Promise<void>((granted, failed) => {
-    locks
-      .request(name, { mode: 'exclusive' }, () => {
-        granted();
-        return new Promise<never>(() => {});
-      })
-      .catch(failed);
-  });
 }
 
 async function getRepoModules() {
@@ -218,16 +159,16 @@ async function getRepoModules() {
     repoModulesReady = (async () => {
       await importMapReady;
 
-      const [automerge, repo, storage, subduction] = await Promise.all([
+      const [automerge, repo, channel, subduction] = await Promise.all([
         (self as any).importShim('@automerge/automerge/slim'),
         (self as any).importShim('@automerge/automerge-repo/slim'),
-        (self as any).importShim('@automerge/automerge-repo-storage-indexeddb'),
+        (self as any).importShim('@automerge/automerge-repo-network-messagechannel'),
         (self as any).importShim('@automerge/automerge-subduction/slim'),
       ]);
 
       return {
         Repo: repo.Repo,
-        IndexedDBStorageAdapter: storage.IndexedDBStorageAdapter,
+        MessageChannelNetworkAdapter: channel.MessageChannelNetworkAdapter,
         initializeWasm: automerge.initializeWasm,
         initSubductionSync: subduction.initSync,
       };

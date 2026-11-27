@@ -87,9 +87,8 @@ parentPort.on('message', (m) => {
   const executor = () =>
     new NodeExecutor({
       script: pathToFileURL(standIn),
-      dataDir: dir,
-      settings: { repoConfig: { syncServerUrl: 'wss://nowhere.invalid' }, place: {} },
-      taskBytes: async () => new Uint8Array(),
+      settings: {},
+      link: () => ({ port: new MessageChannel().port2 as unknown as MessagePort, end() {} }),
     });
   const recorder = () => {
     const said: string[] = [];

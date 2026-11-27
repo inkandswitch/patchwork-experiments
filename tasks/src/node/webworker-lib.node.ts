@@ -5,13 +5,13 @@ import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Repo, initSubduction } from '@automerge/automerge-repo-node';
-import { NodeFSStorageAdapter } from '@automerge/automerge-repo-storage-nodefs';
+import { MessageChannelNetworkAdapter } from '@automerge/automerge-repo-network-messagechannel';
 import { resolvePackageExport } from '@inkandswitch/patchwork-filesystem';
-import type { RepoConfig } from '../repo-config';
 import type { PlaceSettings } from '../webworker-lib';
 import { mirror } from '../registry-snapshot';
 import type { PluginsHere } from '../run-worker';
 import { parseAutomergeImport } from '../import-url';
+import { flushesToHost } from '../pipe';
 import { materialise, packageText } from './package-files';
 import { importTask } from './task-imports';
 
@@ -23,22 +23,22 @@ let place: PlaceSettings = {};
 let threadRepo: Repo | null = null;
 
 /**
- * A Repo for this thread: a Subduction node with a socket of its own to the
- * sync server, keeping its documents in `place.storageDir`, which no other
- * live Repo uses. On disk, so that code fetched from automerge, and documents
- * found before, are had again without the network. What a task's code
- * writes reaches others only through this Repo's socket.
+ * A Repo for this thread, which reaches documents only through `link`, its
+ * end of the pipe to the host's Repo (../pipe.ts): its one network adapter,
+ * with no storage and no socket. Code fetched from automerge, and documents
+ * found before, are had from the host's Repo, which keeps them on disk, so
+ * with no network a host runs the code it already has. What a task's code
+ * writes reaches others through the host's Repo.
  */
-export async function getRepo(config: RepoConfig, peerId: string, given: PlaceSettings = {}) {
+export async function getRepo(peerId: string, link: MessagePort, given: PlaceSettings = {}) {
   place = given;
   subduction ??= initSubduction();
   await subduction;
   threadRepo = new Repo({
-    network: [],
-    subductionWebsocketEndpoints: [config.syncServerUrl],
+    network: [new MessageChannelNetworkAdapter(link)],
     peerId: peerId as any,
-    ...(place.storageDir ? { storage: new NodeFSStorageAdapter(place.storageDir) } : {}),
   } as any);
+  flushesToHost(threadRepo as unknown as Parameters<typeof flushesToHost>[0]);
   return threadRepo as any;
 }
 

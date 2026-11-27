@@ -48,10 +48,11 @@
 //   that has started is ended only when its worker stops answering
 //   (UNANSWERED_MS); an error it reports is logged, and it goes on.
 //
-// The pipe. The page that runs the pool joins the site's Repo (the first
-// given to `followAccount`) to the pool's worker, and to each run worker, by
-// a MessageChannel each: its end is the MessageChannel network adapter in the
-// site's Repo, as core joins its public reader. The pool's is made at each
+// The pipe (../pipe.ts). The page that runs the pool joins the site's Repo
+// (the first given to `followAccount`) to the pool's worker, and to each run
+// worker, by a MessageChannel each, which is the worker's only way to
+// documents. The pool is run only from that Repo: the queues it serves are
+// read from it, and a pool starts only with it in hand. The pool's is made at each
 // start and handed down in 'start'; the pool's worker makes one per run
 // worker and sends up its end ('link'), taken out when that run worker ends
 // ('unlink'), and all are taken out when the pool's worker ends. The site's
@@ -77,12 +78,10 @@
 // every run worker. The workers discover nothing themselves.
 
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo/slim';
-import { MessageChannelNetworkAdapter } from '@automerge/automerge-repo-network-messagechannel';
 import { getAllRegistries } from '@inkandswitch/patchwork-plugins';
 import { getAccountDocUrl, getTaskQueues, mergeStorages, storageLosersOf } from '../helpers';
 import { ownQueue, sparesOf, storageUrlOf } from '../task-client.js';
-import { getRepoConfig } from '../repo-config';
-import { WORKER_PEER } from '../ids';
+import { pipe } from '../pipe';
 import { BEAT_MS, LAPSE_MS } from '../task-rules.js';
 import { browserPoolId, browserPoolName } from './pool-id';
 import { followRegistries } from '../registry-snapshot';
@@ -501,12 +500,13 @@ class BrowserPoolHost implements PoolHost {
   }
 
   /**
-   * Why this page should not run the pool now, or null when it should. A
+   * Why this page should not run the pool now, or the site's Repo, which it
+   * runs the pool from, when it should. A
    * hidden page comes first, whatever else holds: a pool left to drain in a
    * frozen page keeps the lock, with its runs unheard, until the page wakes,
    * so it is ended at once instead.
    */
-  private unwanted(): Drain | 'hidden' | 'unread' | null {
+  private unwanted(): Drain | 'hidden' | 'unread' | Repo {
     if (this.hidden) {
       return 'hidden';
     }
@@ -516,13 +516,15 @@ class BrowserPoolHost implements PoolHost {
     if (this.holds === 0) {
       return 'let go';
     }
-    if (!this.known) {
+    // The queues are read from the site's Repo, so a read list has one; and
+    // a pool is only ever run from it.
+    if (!this.known || !this.siteRepo) {
       return 'unread';
     }
     if (this.queues.length === 0) {
       return 'nothing served';
     }
-    return null;
+    return this.siteRepo;
   }
 
   /**
@@ -533,8 +535,8 @@ class BrowserPoolHost implements PoolHost {
    */
   private decide() {
     const why = this.unwanted();
-    if (why === null) {
-      this.ask();
+    if (typeof why !== 'string') {
+      this.ask(why);
     } else {
       this.asking?.abort();
       this.asking = null;
@@ -609,7 +611,7 @@ class BrowserPoolHost implements PoolHost {
   }
 
   /** Asks for the lock, unless this page has it, is asking, or is waiting to try again after a failure. */
-  private ask() {
+  private ask(site: Repo) {
     if (this.asking || this.held || this.failure) {
       return;
     }
@@ -625,7 +627,7 @@ class BrowserPoolHost implements PoolHost {
         if (this.asking === asking) {
           this.asking = null;
         }
-        return this.runPool();
+        return this.runPool(site);
       })
       .catch((error) => {
         if (this.asking === asking) {
@@ -638,8 +640,8 @@ class BrowserPoolHost implements PoolHost {
   }
 
   /** Runs the pool while this page holds the lock: the lock is let go when the promise settles. */
-  private runPool(): Promise<void> {
-    if (this.unwanted() !== null) {
+  private runPool(site: Repo): Promise<void> {
+    if (typeof this.unwanted() === 'string') {
       // no longer wanted between asking and being given the lock
       this.show();
       return Promise.resolve();
@@ -654,7 +656,6 @@ class BrowserPoolHost implements PoolHost {
       let ended = false;
       let poll: ReturnType<typeof setInterval> | undefined;
       let unfollow = () => {};
-      const site = this.siteRepo;
       /** The pipes to this pool's workers, by name, each with how to take it out. */
       const pipes = new Map<string, () => void>();
       const unpipe = (name: string) => {
@@ -691,7 +692,7 @@ class BrowserPoolHost implements PoolHost {
       const failed = (problem: string) => {
         console.error(`tasks: this browser's pool stopped: ${problem}`);
         held.end();
-        if (this.unwanted() === null) {
+        if (typeof this.unwanted() !== 'string') {
           this.failure = { problem, retryAt: Date.now() + RETRY_MS };
           clearTimeout(this.retry);
           this.retry = setTimeout(() => {
@@ -718,8 +719,8 @@ class BrowserPoolHost implements PoolHost {
           return; // a message sent before the worker was ended
         }
         switch (data?.type) {
-          case 'link': // sent only by a pool whose 'start' carried a port, so only with `site`
-            pipes.set(`run ${data.id}`, pipe(site!, data.port));
+          case 'link':
+            pipes.set(`run ${data.id}`, pipe(site, data.port));
             break;
           case 'unlink':
             unpipe(`run ${data.id}`);
@@ -752,23 +753,20 @@ class BrowserPoolHost implements PoolHost {
         }
       };
 
-      const link = site ? new MessageChannel() : null;
-      if (link) {
-        pipes.set('pool', pipe(site!, link.port1));
-      }
+      const link = new MessageChannel();
+      pipes.set('pool', pipe(site, link.port1));
       worker.postMessage(
         {
           type: 'start',
-          repoConfig: getRepoConfig(),
           id,
           name,
           slots: SLOTS,
           queues: this.queues,
           importMap: pageImportMap(),
           baseURI: document.baseURI,
-          ...(link ? { link: link.port2 } : {}),
+          link: link.port2,
         } satisfies ToPoolWorker,
-        link ? [link.port2] : [],
+        [link.port2],
       );
       unfollow = followRegistries({ getAllRegistries }, (snapshot) => worker.postMessage({ type: 'plugins', snapshot } satisfies ToPoolWorker));
       // The status the badge shows, and the pool's sign of life. A hidden
@@ -786,29 +784,6 @@ class BrowserPoolHost implements PoolHost {
       }, BEAT_MS);
     });
   }
-}
-
-/** The site's Repos told to offer a worker's Repo nothing. */
-const offeringNothing = new WeakSet<Repo>();
-
-/**
- * Joins `repo` to a worker by `port`, the page's end of a MessageChannel, as
- * one of `repo`'s network adapters. Returns how to take it out again.
- */
-export function pipe(repo: Repo, port: MessagePort): () => void {
-  if (!offeringNothing.has(repo)) {
-    offeringNothing.add(repo);
-    // The Repo's synchronizer holds this object, so it is changed in place, as core does for its public reader.
-    const config = repo.shareConfig;
-    const { announce } = config;
-    config.announce = (peerId, documentId) => (String(peerId).startsWith(WORKER_PEER) ? Promise.resolve(false) : announce(peerId, documentId));
-  }
-  const adapter = new MessageChannelNetworkAdapter(port);
-  repo.networkSubsystem.addNetworkAdapter(adapter);
-  return () => {
-    repo.networkSubsystem.removeNetworkAdapter(adapter);
-    port.close();
-  };
 }
 
 /** What the task storage document says to serve. */

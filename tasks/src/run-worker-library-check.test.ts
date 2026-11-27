@@ -82,7 +82,7 @@ describe("a run worker's own library", () => {
     const described = { type: 'patchwork:library', id: 'tasks-next', name: 'Tasks client', importUrl: installed };
     const { tell, ending } = start();
 
-    tell({ type: 'settings', settings: { repoConfig: { syncServerUrl: 'wss://nowhere.invalid' } } });
+    tell({ type: 'settings', settings: { link: new MessageChannel().port1 } });
     tell({ type: 'job', job: job(1) });
     expect(await ending()).toEqual({ type: 'done', result: 'own' });
     expect(order).toEqual(['agreed 0', 'imported data:text/javascript,asks', 'ran']);

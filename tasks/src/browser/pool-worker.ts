@@ -1,7 +1,7 @@
 // A browser's pool: a dedicated worker made by the one tab of this browser
-// profile that holds the pool's Web Lock (pool-host.ts). It has a Repo of its
-// own on the tasks database, a Pool (../pool.ts), and run workers it makes
-// itself, nested inside it (executor.ts).
+// profile that holds the pool's Web Lock (pool-host.ts). It has a Repo piped
+// to the page's, a Pool (../pool.ts), and run workers it makes itself, nested
+// inside it (executor.ts).
 //
 // It lives in a worker, not the page, because a hidden page's own timers
 // slow to one a minute after five minutes, and the pool's beat is what tells
@@ -10,12 +10,11 @@
 // The page tells it once how to start, and from then on which queues to
 // serve; it answers with its status when asked, and stops when told.
 //
-// The pipe (pool-host.ts). The page hands it, in 'start', its end of a
-// MessageChannel to the site's Repo, which its Repo takes as its network
+// The pipe (../pipe.ts). The page hands it, in 'start', its end of a
+// MessageChannel to the site's Repo, which its Repo takes as its only network
 // adapter. For each run worker it starts, it makes another, sends the page
 // one end ('link') and hands the run worker the other in its settings; it
-// says when that run worker has ended ('unlink'). A pool given no port pipes
-// none of its run workers.
+// says when that run worker has ended ('unlink').
 //
 // The pool's registry (../registry-snapshot.ts). The page sends its
 // registry's snapshot ('plugins') as the pool starts and whenever it changes;
@@ -32,7 +31,6 @@
 
 import type { AutomergeUrl } from '@automerge/automerge-repo/slim';
 import { Pool, type Docs } from '../pool';
-import type { RepoConfig } from '../repo-config';
 import type { Snapshot } from '../registry-snapshot';
 import { getRepo, setUpImportMap } from '../webworker-lib';
 import { WORKER_PEER } from '../ids';
@@ -47,7 +45,6 @@ export const WORKER_LOCK = 'patchwork-tasks-pool-worker';
 export type ToPoolWorker =
   | {
       type: 'start';
-      repoConfig: RepoConfig;
       /** The pool's id: the same for every pool this browser profile runs, so each owns what the last one started. */
       id: string;
       name: string;
@@ -56,8 +53,8 @@ export type ToPoolWorker =
       /** The page's import map and base URI, which the Repo's modules and a task's bare imports resolve by. */
       importMap: unknown;
       baseURI: string;
-      /** Its end of the pipe to the site's Repo, when the page has one. */
-      link?: MessagePort;
+      /** Its end of the pipe to the site's Repo. */
+      link: MessagePort;
     }
   /** The queues to serve from now on. */
   | { type: 'serve'; queues: ServedQueues }
@@ -145,15 +142,13 @@ scope.onmessage = ({ data }) => {
 async function start(settings: Extract<ToPoolWorker, { type: 'start' }>): Promise<Pool> {
   await holdForLife(WORKER_LOCK);
   await setUpImportMap(settings.importMap ?? {}, settings.baseURI);
-  const repo = await getRepo(settings.repoConfig, `${WORKER_PEER}pool-${crypto.randomUUID()}`, {}, settings.link);
+  const repo = await getRepo(`${WORKER_PEER}pool-${crypto.randomUUID()}`, settings.link);
   executor = new BrowserExecutor({
     settings: {
-      repoConfig: settings.repoConfig,
       importMap: settings.importMap,
       baseURI: settings.baseURI,
     },
-    taskBytes: (taskUrl) => repo.export(taskUrl),
-    link: settings.link ? linkRunWorker : undefined,
+    link: linkRunWorker,
   });
   executor.plugins.set({ snapshot: plugins });
   return new Pool({

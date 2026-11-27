@@ -47,9 +47,9 @@ export interface TaskContext {
    */
   settled: Promise<void>;
   /**
-   * The worker's Repo, for a task whose work is on documents. It has the
-   * task's document as the pool had it when it handed the run over, this
-   * run included, without waiting for the network.
+   * The worker's Repo, for a task whose work is on documents. It reaches
+   * documents, the task's included, through its host's Repo, which has them
+   * with no network if it has them kept.
    *
    * One thing differs from the Repo itself: `find` waits for a document that
    * has not arrived yet (asking again for about half a minute, as

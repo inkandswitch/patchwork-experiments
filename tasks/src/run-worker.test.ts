@@ -12,10 +12,6 @@ let events: string[];
 let said: FromRunWorker[];
 let modules: Record<string, unknown>;
 let repoFails: boolean;
-let imported: { docId: string; bytes: Uint8Array }[];
-let calls: string[];
-/** How the next Repo is made: whether it records every use. */
-let made: { recorded: boolean };
 let theRepo: FakeRepo;
 
 class FakeHandle {
@@ -50,10 +46,6 @@ class FakeRepo {
   get handles() {
     return { ...this.byId };
   }
-  import(bytes: Uint8Array, args: { docId: string }) {
-    imported.push({ docId: args.docId, bytes });
-    this.byId[args.docId] = new FakeHandle(args.docId);
-  }
   async flush() {
     events.push('flush');
   }
@@ -86,18 +78,7 @@ vi.mock('./webworker-lib', () => ({
       throw new Error('no repo here');
     }
     theRepo = new FakeRepo();
-    if (!made.recorded) {
-      return theRepo;
-    }
-    // Records every use: the run worker imports the task.
-    return new Proxy(theRepo, {
-      get(target, name) {
-        calls.push(String(name));
-        const value = Reflect.get(target, name, target);
-        // bound, so that the fake's own workings are not counted as uses
-        return typeof value === 'function' ? value.bind(target) : value;
-      },
-    });
+    return theRepo;
   },
   importModule: async (url: string) => {
     if (!(url in modules)) {
@@ -131,7 +112,7 @@ function start() {
   return (message: ToRunWorker) => deliver(message);
 }
 
-const settings: ToRunWorker = { type: 'settings', settings: { repoConfig: { syncServerUrl: 'wss://nowhere.invalid' } } };
+const settings: ToRunWorker = { type: 'settings', settings: { link: new MessageChannel().port1 } };
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 const endings = () => said.filter((m) => m.type === 'done' || m.type === 'threw');
 
@@ -140,9 +121,6 @@ beforeEach(() => {
   said = [];
   modules = {};
   repoFails = false;
-  imported = [];
-  calls = [];
-  made = { recorded: false };
 });
 
 afterEach(() => {
@@ -165,19 +143,6 @@ describe('a run worker', () => {
     expect(seen).toEqual({ self: true, input: { n: 1 }, run: 'run-1', key: 'k', taskUrl: job('ok').taskUrl });
     expect(events).toEqual(['done']);
     expect(said).toEqual([{ type: 'done', result: { doubled: 2 } }]);
-  });
-
-  it('hands the code a Repo that has the task, and does nothing else to it', async () => {
-    made.recorded = true;
-    modules.ok = { default: () => 1 };
-    const tell = start();
-    tell(settings);
-    const bytes = new Uint8Array([1, 2, 3]);
-    tell({ type: 'job', job: job('ok'), task: bytes });
-    await settle();
-    expect(imported).toEqual([{ docId: '2KYqboWHPS5rvWsheoLnHgFvE7ou', bytes }]);
-    // `then` is the promise machinery asking whether the Repo is itself a promise.
-    expect(new Set(calls)).toEqual(new Set(['then', 'import']));
   });
 
   // Each way the code can fail ends in one `threw`, never in silence, and
@@ -502,7 +467,7 @@ describe('what a run wrote is left to its Repo', () => {
     modules.ok = { default: (_: unknown, ctx: any) => ctx.repo.create({ x: 1 }).documentId };
     const tell = start();
     tell(settings);
-    tell({ type: 'job', job: job('ok'), task: new Uint8Array([1]) });
+    tell({ type: 'job', job: job('ok') });
     await settle();
     expect(events).toEqual(['done']);
   });

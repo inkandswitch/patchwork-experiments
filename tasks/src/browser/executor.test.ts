@@ -63,29 +63,22 @@ function events() {
   return { events: it, heard };
 }
 
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-const settings = { repoConfig: { syncServerUrl: 'wss://nowhere.invalid' } };
+const settings = {};
 
 describe('a run worker, in a browser', () => {
-  it('is told its settings at once, with its end of the pipe, and the job behind them; with no pipe, none', async () => {
+  it('is told its settings first, with its end of the pipe, and the job behind them', async () => {
     const link = standInLink();
-    const run = new BrowserExecutor({ settings, taskBytes: async () => undefined, link: () => link }).start(events().events);
+    const run = new BrowserExecutor({ settings, link: () => link }).start(events().events);
     run.run({ taskUrl: 'automerge:x', runId: 'r', importUrl: 'u', input: null, key: 'k' } as any);
     const worker = StandInWorker.made[0];
-    expect(worker.told.map(({ message }) => message.type)).toEqual(['settings']);
     expect(worker.told[0].message.settings.link === link.port && worker.told[0].transfer[0] === link.port).toBe(true);
-    await tick();
     expect(worker.told.map(({ message }) => message.type)).toEqual(['settings', 'job']);
-
-    new BrowserExecutor({ settings, taskBytes: async () => undefined }).start(events().events);
-    expect(StandInWorker.made[1].told[0].message.settings.link).toBeUndefined();
-    expect(StandInWorker.made[1].told[0].transfer).toEqual([]);
   });
 
   it('what it says is heard in order; an error after its ending ends it at once and is heard behind it, and its pipe ends with it', () => {
     const link = standInLink();
     const { events: e, heard } = events();
-    new BrowserExecutor({ settings, taskBytes: async () => undefined, link: () => link }).start(e);
+    new BrowserExecutor({ settings, link: () => link }).start(e);
     const worker = StandInWorker.made[0];
     worker.say({ type: 'log', message: 'before' });
     worker.say({ type: 'done', result: 7 });
