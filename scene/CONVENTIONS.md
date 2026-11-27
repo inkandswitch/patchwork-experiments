@@ -57,6 +57,8 @@ another's that isn't listed here or on those pages.
 | `units`, `layers`, `layer`, `connectors`, `snapRadius`, `legend`, `receiveShadow` | GLB extras | scene | units, layers, connectors, a colour bar, a one-sided sheet | README.md |
 | `chartroom:source` | plugin type | Chartroom | a hull datatype's hydrostatic table | naval/README.md |
 | `patchwork:datatype`, `patchwork:tool` | plugin types | Patchwork | datatypes and tools | Patchwork |
+| `patchwork:library` | plugin type | Patchwork | a plugin whose `load()` gives a module of functions and constants to call | Patchwork |
+| `tasks-next` | plugin id (`patchwork:library`) | tasks | the task system's client, rules and run helpers as one module, registered by the tasks package and by every pool | tasks/README.md |
 | `agent:tool` | plugin type | agent | a tool the agent may call: its name, input schema, where it runs and what it risks | agent/TOOLS.md |
 | `text/x-patchwork-dnd`, `text/x-patchwork-urls` | MIME types | Patchwork | documents dragged from Patchwork's sidebar | Patchwork |
 | `patchwork:open-document` | DOM event | Patchwork | `{ url, toolId? }`, bubbling and composed: open a document | Patchwork |

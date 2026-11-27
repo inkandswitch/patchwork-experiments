@@ -3,6 +3,7 @@ import {
   POOL_COMPONENT_ID,
   QUEUE_DATATYPE_ID,
   QUEUE_TOOL_ID,
+  TASKS_LIBRARY,
   TITLEBAR_TOOL_ID,
   TRAY_COMPONENT_ID,
 } from './ids';
@@ -58,4 +59,6 @@ export const plugins: Plugin<any>[] = [
     tags: ['background'],
     load: async () => (await import('./pool-starter')).PoolStarter,
   },
+  // the client, for every other package (ids.ts)
+  TASKS_LIBRARY,
 ];

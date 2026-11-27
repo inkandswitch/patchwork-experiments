@@ -111,11 +111,14 @@ export class Latest<T> {
  * Makes the registries `getRegistry` gives agree with each snapshot it is
  * handed: registers what is new or changed, each with a load() that is
  * `load(importUrl, type, id)`, and removes what is gone. Only what it
- * registered itself is its to remove.
+ * registered itself is its to remove. Each of `own`, what the realm brings
+ * itself, stands wherever the snapshot has none of its type and id: from the
+ * first snapshot, and again once an installed one is removed.
  */
 export function mirror(
   getRegistry: (type: string) => PluginRegistry<any>,
   load: (importUrl: string, type: string, id: string) => Promise<unknown>,
+  own: { type: string; id: string }[] = [],
 ): (snapshot: Snapshot) => void {
   /** What this mirror registered, by `<type> <id>`: its description, as JSON. */
   const had = new Map<string, string>();
@@ -134,6 +137,11 @@ export function mirror(
         had.delete(key);
         const space = key.indexOf(' ');
         getRegistry(key.slice(0, space)).remove(key.slice(space + 1));
+      }
+    }
+    for (const plugin of own) {
+      if (!now.has(`${plugin.type} ${plugin.id}`) && !getRegistry(plugin.type).has(plugin.id)) {
+        getRegistry(plugin.type).register(plugin as any, undefined as any); // from no package: this build's own
       }
     }
   };

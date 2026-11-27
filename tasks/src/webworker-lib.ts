@@ -39,14 +39,15 @@ export const importModule = (importUrl: string): Promise<any> =>
  * `@inkandswitch/patchwork-plugins` through the page's import map, made to
  * agree with each snapshot it is handed. A plugin's load() is core's
  * `importPluginFromFolderDocUrl`, as on the page: its package is served by
- * this site's service worker.
+ * this site's service worker. `own` stands where nothing installed has its
+ * type and id (`mirror`).
  */
-export async function pluginMirror(): Promise<(plugins: PluginsHere) => void> {
+export async function pluginMirror(own: { type: string; id: string }[]): Promise<(plugins: PluginsHere) => void> {
   const [registry, files] = await Promise.all([
     (self as any).importShim('@inkandswitch/patchwork-plugins'),
     (self as any).importShim('@inkandswitch/patchwork-filesystem'),
   ]);
-  const agree = mirror(registry.getRegistry, files.importPluginFromFolderDocUrl);
+  const agree = mirror(registry.getRegistry, files.importPluginFromFolderDocUrl, own);
   return ({ snapshot }) => agree(snapshot);
 }
 

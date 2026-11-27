@@ -1,12 +1,11 @@
 /**
- * task-client.js — asking a queue for a task, stopping it, and following what becomes of it. [kit: task-client.js v18]
+ * task-client.js — asking a queue for a task, stopping it, and following what becomes of it.
  *
  * Everything here is a read or a write of a queue's document and a task's
  * document, or listening on their channels; nothing is sent to anyone. So it
  * works from any Repo that can reach those documents, in a page, a worker or
  * Node, whether or not a pool runs on the same machine. The rules it applies
- * are task-rules.js's, which sits beside it; the canonical copies of both are
- * in the tasks package.
+ * are task-rules.js's. Other packages get both from the registry (client.js).
  *
  * It also holds how the task system's messages travel (`send`, `listen`),
  * because hearing them is half of following a task; and, for a page, where

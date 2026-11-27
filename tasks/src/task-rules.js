@@ -1,10 +1,10 @@
 /**
- * task-rules.js — the whole of the task system's rules. [kit: task-rules.js v9]
+ * task-rules.js — the whole of the task system's rules.
  *
  * What the documents are, and what may be read from them. Everything else (a
  * pool, an asker, a view) is these rules applied to documents and to what has
- * been heard. The canonical copy is in the tasks package; a package that asks
- * for tasks carries a copy, with task-client.js beside it.
+ * been heard. Other packages get them, with the client, from the registry
+ * (client.js).
  *
  * THREE THINGS
  *

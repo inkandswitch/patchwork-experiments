@@ -1,5 +1,5 @@
 // Which pool is this browser's, for the pool host and for views that mark it.
-// The key it is kept under is the kit's, since an asking page reads it there
+// The key it is kept under is the client's, since an asking page reads it there
 // to say which pool it is next to.
 
 import { POOL_ID_KEY } from '../task-client.js';

@@ -147,7 +147,8 @@ function localCopy(packageUrl: string, path: string): string | null {
  * thread loads from.
  */
 export async function importPackage(repo: any, urlAtHeads: string, codeDir: string): Promise<{ module: any; entry: string }> {
-  const at = (path: string) => parseAutomergeImport(`/${encodeURIComponent(urlAtHeads)}/${path}`)!;
+  // the path as package.json names it, not escaped as a url would have it
+  const at = (path: string) => ({ ...parseAutomergeImport(`/${encodeURIComponent(urlAtHeads)}/package.json`)!, path });
   const manifest = JSON.parse(await packageText(repo, at('package.json')));
   const entry = await materialise(repo, at(resolvePackageExport(manifest).replace(/^\.\//, '')), codeDir);
   return { module: await importTask(pathToFileURL(entry).href, 'carried'), entry };
@@ -159,9 +160,10 @@ export async function importPackage(repo: any, urlAtHeads: string, codeDir: stri
  * each snapshot it is handed. A plugin's load() imports its package's entry
  * from where the host put it on disk (`packages`), so it needs no network
  * and no document, and runs that plugin's own load(), as core's
- * `importPluginFromFolderDocUrl` does on a page.
+ * `importPluginFromFolderDocUrl` does on a page. `own` stands where nothing
+ * installed has its type and id (`mirror`).
  */
-export async function pluginMirror(): Promise<(plugins: PluginsHere) => void> {
+export async function pluginMirror(own: { type: string; id: string }[]): Promise<(plugins: PluginsHere) => void> {
   const registry = await import('@inkandswitch/patchwork-plugins');
   let packages: Record<string, string> = {};
   const agree = mirror(registry.getRegistry, async (importUrl, type, id) => {
@@ -175,7 +177,7 @@ export async function pluginMirror(): Promise<(plugins: PluginsHere) => void> {
       throw new Error(`the package ${importUrl} has no plugin "${type}:${id}" with a load()`);
     }
     return plugin.load();
-  });
+  }, own);
   return (plugins) => {
     packages = plugins.packages ?? {};
     agree(plugins.snapshot);

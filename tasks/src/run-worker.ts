@@ -23,11 +23,14 @@
 // It has the pool's plugin registry (registry-snapshot.ts): its settings
 // carry the registry's snapshot, and a newer one comes whenever it changes.
 // The registry agrees with it before any task's code is imported, so code
-// that imports `@inkandswitch/patchwork-plugins` finds what the pool has.
+// that imports `@inkandswitch/patchwork-plugins` finds what the pool has. A
+// pool is the tasks package, so the task client (TASKS_LIBRARY) is always
+// there: this build's own, until an installed one replaces it.
 
 import type { DocumentId, Repo } from '@automerge/automerge-repo/slim';
 import { firstAttempt, getRepo, importModule, pluginMirror, setUpImportMap, type PlaceSettings } from './webworker-lib';
 import { findWhenThere } from './task-client.js';
+import { TASKS_LIBRARY } from './ids';
 import type { RepoConfig } from './repo-config';
 import type { Job, StopReason } from './pool';
 import type { TaskContext } from './job-context';
@@ -128,7 +131,7 @@ export function serve(port: RunWorkerPort) {
         repo.catch(() => {}); // said by each job that needs it
         plugins = settings.plugins ?? plugins;
         registry = setUpImportMap(settings.importMap ?? {}, settings.baseURI ?? '')
-          .then(() => pluginMirror())
+          .then(() => pluginMirror([TASKS_LIBRARY]))
           .then((agree) => (agree(plugins), agree));
         registry.catch((error) => console.warn(`tasks: this run worker has no plugin registry: ${messageOf(error)}`));
         break;

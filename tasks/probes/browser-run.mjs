@@ -79,7 +79,7 @@
 // background component until 21 does, and then lets it go. Check 23 runs
 // on tab A's pool, after 19. Checks 24 and 22 run next, in a browser
 // context of their own, in that order, then 26 to 29, 41, 42 and 30 in
-// another, 40 in another, 43 to 47 in another, and 25 last, over every
+// another, 40 in another, 43 to 50 in another, and 25 last, over every
 // request seen.
 //
 // Checks 43 to 47 are about the pool's plugin registry: the page's registry
@@ -91,8 +91,15 @@
 // is made up. Task code given as a data: URL asks the registry with the code
 // a page writes, in a run worker: the library's module; a package added, then
 // updated (new heads), then removed, as task code asked afterwards sees it;
-// and a run worker started later has the registry at once. With
-// --no-network, the same.
+// and a run worker started later has the registry at once. Then (48 to 50)
+// the task client as a library: task code given as a data: URL gets it
+// through the registry and uses it (finds a document the page made, reads a
+// rules constant), the pool's own build with nothing installed (48); the page
+// gets the same library through its own registry, the package's plugins
+// registered as core's page registers them (49); and a copy of this package's
+// package.json and dist/, installed as a package kept in automerge, replaces
+// the pool's own in a run worker, which comes back once it is removed (50).
+// With --no-network, the same.
 // A copy of dist/ stamped as a newer build is served at /dist-newer.
 //
 // Each check prints one line with what was observed; the process exits 1 if
@@ -152,6 +159,10 @@ const SETTLES = dataUrl(
 // the code a page writes, given as a data: URL: each id's library from the registry, or that there is none; then waits `holdMs`
 const ASKS = dataUrl(
   'import { getRegistry } from "@inkandswitch/patchwork-plugins"; export default async ({ ids, holdMs = 0 }) => { const registry = getRegistry("patchwork:library"); const out = {}; for (const id of ids) { if (!registry.has(id)) { out[id] = "none"; continue; } const { module } = await registry.load(id); out[id] = { version: module.version, sum: module.add(2, 3) }; } await new Promise((r) => setTimeout(r, holdMs)); out.where = typeof window === "undefined" ? "worker" : "page"; return out; };',
+);
+// the task client through the registry, as task code anywhere asks for it: a document it is handed, found with the client, and a rules constant
+const CLIENT = dataUrl(
+  'import { getRegistry } from "@inkandswitch/patchwork-plugins"; export default async ({ doc }, ctx) => { const plugin = await getRegistry("patchwork:library").loadWhenReady("tasks-next"); const tasks = plugin.module; const found = (await tasks.findWhenThere(ctx.repo, doc)).doc(); return { from: plugin.importUrl ?? "the pool\'s own build", beat: tasks.BEAT_MS, found, names: Object.keys(tasks).sort(), where: typeof window === "undefined" ? "worker" : "page" }; };',
 );
 // says where it ran: a pool's run worker has no window
 const WHERE = dataUrl("export default () => (typeof window === 'undefined' ? 'worker' : 'page');");
@@ -599,6 +610,39 @@ async function registryInPool() {
       `47 a run worker started after the registry changed has it at once${offline}`,
       before === 1 && after === 2 && two.every(({ result }) => result?.[LIB]?.version === 2 && result?.[LATE] === "none"),
       `run workers ${before} before, ${after} after; the two tasks gave ${J(two.map((t) => t.result))}`,
+    );
+
+    // 48 to 50: the task client as a library, used: a document the page made, found with its findWhenThere, and a rules constant
+    const doc = await R.js("(async () => { const handle = probe.repo.create({ hello: 'from the page' }); await probe.repo.flush(); return handle.url; })()");
+    const client = async () => (await R.js(`probe.timeRun(${J(CLIENT)}, ${J({ doc })})`, 60_000)).result;
+    const used = (r, from) => r?.from === from && r?.beat === BEAT_MS && r?.found?.hello === "from the page" && r?.names?.length > 100 && r.where === "worker";
+    const short = (r) => J({ ...r, names: r?.names?.length });
+    const own = await client();
+    check(`48 task code in a browser's run worker, nothing installed, gets the task client through the registry, the pool's own build, and uses it${offline}`, used(own, "the pool's own build"), `the task gave ${short(own)}`);
+
+    // registered as core's page registers a package's plugins, from its entry (served over http here, so the pool's registry does not have them)
+    const page = await R.js(`(async () => {
+      const { getRegistry, registerPlugins } = await import('@inkandswitch/patchwork-plugins');
+      registerPlugins((await import('/dist/index.js')).plugins, location.origin + '/dist/index.js');
+      const { module: tasks } = await getRegistry('patchwork:library').loadWhenReady('tasks-next');
+      return { beat: tasks.BEAT_MS, found: (await tasks.findWhenThere(probe.repo, ${J(doc)})).doc(), names: Object.keys(tasks).sort() };
+    })()`);
+    check(`49 a page gets the same library through its registry, and uses it${offline}`, page.beat === BEAT_MS && page.found?.hello === "from the page" && J(page.names) === J(own?.names), `the page got ${short(page)}`);
+
+    // a copy of this package installed as core's page installs one kept in automerge: its package.json and dist/, served at the service worker's paths
+    const copy = stringifyAutomergeUrl({ documentId: parseAutomergeUrl(generateAutomergeUrl()).documentId, heads: encodeHeads(["b".repeat(64)]) });
+    const files = { "package.json": readFileSync(join(PKG, "package.json"), "utf8") };
+    const walk = (dir) => readdirSync(join(PKG, dir), { withFileTypes: true }).forEach((e) => (e.isDirectory() ? walk(`${dir}/${e.name}`) : !e.name.endsWith(".map") && (files[`${dir}/${e.name}`] = readFileSync(join(PKG, dir, e.name), "utf8"))));
+    walk("dist");
+    scratch.set(copy, files);
+    await R.js(`probe.install(${J(copy)}, ${J([{ type: "patchwork:library", id: "tasks-next", name: "Tasks client (experimental)" }])})`);
+    const installed = await client();
+    await R.js(`probe.uninstall(${J(copy)})`);
+    const again = await client();
+    check(
+      `50 a copy of the tasks package installed in the page replaces the pool's own client in a run worker, and once it is removed the pool's own is back${offline}`,
+      used(installed, copy) && used(again, "the pool's own build"),
+      `installed: ${short(installed)}; removed: ${short(again)}`,
     );
   } finally {
     await send("Target.disposeBrowserContext", { browserContextId }).catch(() => {});

@@ -14,8 +14,8 @@
 //   carried-code hooks are task-imports.test.ts's): package.json is read at
 //   the heads the url names, not the latest; a Patchwork `folder` package
 //   works as a pushwork `directory` one does; only the entry's directory is
-//   written; and an entry whose path has a character a URL escapes (a space)
-//   is not found, which the hand-made parse before the fix did find.
+//   written; and an entry whose path has a character a URL escapes (a space,
+//   or one that is not ASCII) is found.
 
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -173,16 +173,16 @@ describe('importPackage, with real documents', () => {
     expect(filesUnder(codeDir).map((path) => path.split('/').slice(2).join('/'))).toEqual(['dist/index.js', 'package.json']);
   });
 
-  // DEFECT: importPackage now builds its paths with parseAutomergeImport,
-  // which reads a URL: the entry path comes back URL-escaped
-  // ("dist/my%20entry.js") and materialise finds no such file. The hand-made
-  // parse it replaced kept the path as package.json gave it.
-  it.fails('imports a package whose entry path has a space in it', async () => {
-    const folder = repo.create({
-      'package.json': file('{ "type": "module", "exports": "./dist/my entry.js" }'),
-      'dist/my entry.js': file(LIB),
-    });
-    const { module } = await importPackage(repo, atHeads(folder), join(dir, 'space'));
-    expect(Array.isArray(module.plugins)).toBe(true);
+  // the path as package.json gives it, not URL-escaped ("dist/my%20entry.js")
+  it('imports a package whose entry path has a space, or a character that is not ASCII, in it', async () => {
+    for (const name of ['my entry.js', 'ünï.js']) {
+      const folder = repo.create({
+        'package.json': file(`{ "type": "module", "exports": "./dist/${name}" }`),
+        [`dist/${name}`]: file(LIB),
+      });
+      const { module, entry } = await importPackage(repo, atHeads(folder), join(dir, 'escaped'));
+      expect(Array.isArray(module.plugins)).toBe(true);
+      expect(entry.endsWith(`dist/${name}`)).toBe(true);
+    }
   });
 });

@@ -1,7 +1,7 @@
 // Builds the task system for Node: the host that runs a machine's pool from a
 // process (src/node/host.ts), the run worker its threads run
-// (src/node/run-thread.ts), and the asker's client (src/task-client.js) for a
-// Node program that asks a queue for work.
+// (src/node/run-thread.ts), and the task client (src/client.js: the client,
+// the rules and the run helpers) for a Node program that is not a pool.
 //
 //   node scripts/build-node.mjs      →  dist-node/
 //
@@ -24,7 +24,7 @@ await build({
   entryPoints: {
     host: "src/node/host.ts",
     "run-thread": "src/node/run-thread.ts",
-    "task-client": "src/task-client.js",
+    "task-client": "src/client.js",
   },
   outdir: "dist-node",
   outExtension: { ".js": ".mjs" },

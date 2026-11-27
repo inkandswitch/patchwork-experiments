@@ -13,8 +13,8 @@
 // has the rule), moving it to the origin a worker is actually on, and, where
 // there is no service worker (src/node), fetching the files it names.
 //
-// The reading itself is in task-client.js, which packages that ask for tasks
-// carry a copy of; this file adds what only a worker needs.
+// The reading itself is in task-client.js, which askers have too; this file
+// adds what only a worker needs.
 
 import { parseAutomergeImport } from './task-client.js';
 

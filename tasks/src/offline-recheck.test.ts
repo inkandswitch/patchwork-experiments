@@ -123,7 +123,7 @@ describe('doWork with no network, on either Repo', () => {
 
 describe('several copies of the client on one Repo, own not here', () => {
   it('three copies asking at once: one spare is marked, and all three are given it', async () => {
-    // @ts-expect-error second and third instances of the module, as kit copies are
+    // @ts-expect-error second and third instances of the module, as two builds of the package are
     const two = (await import('./task-client.js?copy=recheck-2')) as typeof import('./task-client.js');
     // @ts-expect-error
     const three = (await import('./task-client.js?copy=recheck-3')) as typeof import('./task-client.js');

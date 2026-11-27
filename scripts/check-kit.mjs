@@ -4,8 +4,7 @@
  *
  * Tools here never import each other's source, so small shared modules are
  * copied instead (see scene/README.md, "The kit"). A kit file says so in its
- * header, `[kit: <name> v<N>]`, and the canonical copies live in scene/src/
- * and, for the task system's rules and client, in tasks/src/.
+ * header, `[kit: <name> v<N>]`, and the canonical copies live in scene/src/.
  * A copy is any file elsewhere with the same kit name in its header, or (for
  * copies made before the marker existed) the same title line,
  * ` * <name> — …`. Every copy must be byte-identical to the canonical one:
@@ -20,7 +19,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const CANON_DIRS = [join(ROOT, "scene", "src"), join(ROOT, "tasks", "src")];
+const CANON_DIRS = [join(ROOT, "scene", "src")];
 const SKIP = new Set(["node_modules", "dist", ".git", ".pushwork", ".claude", "static-dist", ".pnpm-store"]);
 const fix = process.argv.includes("--fix");
 

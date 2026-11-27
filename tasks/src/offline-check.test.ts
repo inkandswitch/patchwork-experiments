@@ -477,8 +477,8 @@ describe('work sitting in a spare', () => {
 });
 
 describe('two tools asking at once', () => {
-  it('two copies of the client (two packages’ kit copies) asking at once on a page with no own yet: one pointer, both asked of it, and one pool view appended', async () => {
-    // @ts-expect-error a second instance of the module, as a second package's kit copy is
+  it('two copies of the client (two builds of the package) asking at once on a page with no own yet: one pointer, both asked of it, and one pool view appended', async () => {
+    // @ts-expect-error a second instance of the module, as another build of the package is
     const other = (await import('./task-client.js?copy=3')) as typeof import('./task-client.js');
     const appended: any[] = [];
     const views: any[] = [];

@@ -28,10 +28,16 @@
 // sync server unreachable, given a task written straight into its storage,
 // fills its registry from what it kept and runs that task.
 //
+// Checks 28 and 29 are about the task client as a library: task code given as
+// a data: URL gets it through the registry and uses it (finds a document the
+// asker made, reads a rules constant), from the pool's own build on a host with
+// no --modules (28), and from a scratch copy of this package (its package.json
+// and dist/, made here in automerge) on a host whose module list names it (29).
+//
 // Each check prints one line with what was observed. --only runs only the
 // checks named (the hosts' errors are always checked).
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -575,24 +581,31 @@ try {
     }
   }
 
+  // A package kept in automerge as pushwork keeps one: a folder document
+  // mapping each path to its file's document, pinned to the file's heads.
+  const pin = (handle) => handle.view(handle.heads()).url;
+  const publish = (files, was = null) => {
+    const handles = was?.handles ?? new Map();
+    for (const [path, content] of Object.entries(files)) {
+      const handle = handles.get(path);
+      if (!handle) handles.set(path, repo.create({ "@patchwork": { type: "file" }, content }));
+      else if (handle.doc().content !== content) handle.change((d) => (d.content = content));
+    }
+    const root = was?.root ?? repo.create({ "@patchwork": { type: "directory" } });
+    root.change((d) => {
+      for (const [path, handle] of handles) if (d[path] !== pin(handle)) d[path] = pin(handle);
+    });
+    return { root, handles, url: root.url };
+  };
+  /** Resolves once a Repo of no one's has every url from the sync server: a source a host's watcher cannot find as it starts is skipped. */
+  const onServer = async (urls) => {
+    const other = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
+    for (const url of urls) await within(30000, other.find(url), "a scratch package's document on the sync server");
+    await other.shutdown();
+  };
+
   // 22–27. a host's plugin registry (--modules)
   if (want(22, 23, 24, 25, 26, 27)) {
-    // A package kept in automerge as pushwork keeps one: a folder document
-    // mapping each path to its file's document, pinned to the file's heads.
-    const pin = (handle) => handle.view(handle.heads()).url;
-    const publish = (files, was = null) => {
-      const handles = was?.handles ?? new Map();
-      for (const [path, content] of Object.entries(files)) {
-        const handle = handles.get(path);
-        if (!handle) handles.set(path, repo.create({ "@patchwork": { type: "file" }, content }));
-        else if (handle.doc().content !== content) handle.change((d) => (d.content = content));
-      }
-      const root = was?.root ?? repo.create({ "@patchwork": { type: "directory" } });
-      root.change((d) => {
-        for (const [path, handle] of handles) if (d[path] !== pin(handle)) d[path] = pin(handle);
-      });
-      return { root, handles, url: root.url };
-    };
     const tag = Math.random().toString(36).slice(2, 8);
     const library = (id, version) => ({
       "package.json": JSON.stringify({ name: `probe-${id}`, type: "module", main: "dist/index.js" }),
@@ -604,10 +617,7 @@ try {
     const lib = publish(library(LIB, 1));
     const settings = repo.create({ "@patchwork": { type: "patchwork:module-settings" }, modules: [lib.url] });
     await repo.flush();
-    // on the sync server before a host looks: a source a watcher cannot find as it starts is skipped
-    const other = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
-    for (const url of [settings.url, lib.url, ...[...lib.handles.values()].map((h) => h.url)]) await within(30000, other.find(url), "a scratch package's document on the sync server");
-    await other.shutdown();
+    await onServer([settings.url, lib.url, ...[...lib.handles.values()].map((h) => h.url)]);
     // the code a page writes, given as a data: URL: each id's library, or that there is none
     const ASKS = code(`import { getRegistry } from "@inkandswitch/patchwork-plugins";
 export default async function ({ ids, holdMs = 0 }) {
@@ -679,6 +689,40 @@ export default async function ({ ids, holdMs = 0 }) {
     await after.shutdown();
     const result = runs.find((r) => r.status === "succeeded")?.result;
     check(27, "a host restarted with no network fills its registry from what it kept, and task code gets the library", result?.[LIB]?.version === 2 && result?.[LATE] === "none", { result, registeredInMs: filled ? filled.at - M2.lines[0].at : null, ran: ended.text.slice(25), runs: runs.map((r) => r.status) });
+  }
+
+  // 28–29. the task client through the registry: a document the asker made,
+  // found with the client's findWhenThere, and a rules constant
+  if (want(28, 29)) {
+    const CLIENT = code(`import { getRegistry } from "@inkandswitch/patchwork-plugins";
+export default async function ({ doc }, ctx) {
+  const plugin = await getRegistry("patchwork:library").loadWhenReady("tasks-next");
+  const tasks = plugin.module;
+  const found = (await tasks.findWhenThere(ctx.repo, doc)).doc();
+  return { from: plugin.importUrl ?? "the pool's own build", beat: tasks.BEAT_MS, found, names: Object.keys(tasks).length };
+}`);
+    const doc = repo.create({ hello: "from the asker" });
+    await repo.flush();
+    const names = Object.keys(await import(join(ROOT, "dist-node/task-client.mjs"))).length;
+    const used = (r, from) => r?.from === from && r?.beat === BEAT_MS && r?.found?.hello === "from the asker" && r?.names === names;
+
+    // 28. a host with no --modules: the pool's own
+    const own = await within(60000, run(repo, Q, { importUrl: CLIENT, input: { doc: doc.url }, key: "client-own" }), "the task that asks for the client");
+    check(28, "task code on a host with no --modules gets the task client through the registry, the pool's own build, and uses it", used(own, "the pool's own build"), own);
+
+    // 29. a host whose module list names a scratch copy of this package (its package.json and dist/, as published)
+    const files = { "package.json": readFileSync(join(ROOT, "package.json"), "utf8") };
+    const walk = (dir) => readdirSync(join(ROOT, dir), { withFileTypes: true }).forEach((e) => (e.isDirectory() ? walk(`${dir}/${e.name}`) : !e.name.endsWith(".map") && (files[`${dir}/${e.name}`] = readFileSync(join(ROOT, dir, e.name), "utf8"))));
+    walk("dist");
+    const copy = publish(files);
+    const settings = repo.create({ "@patchwork": { type: "patchwork:module-settings" }, modules: [copy.url] });
+    await repo.flush();
+    await onServer([settings.url, copy.url, ...[...copy.handles.values()].map((h) => h.url)]);
+    const tq = await newQueue("node probe queue, the client installed");
+    const T = await startHost("T", { queue: tq.url, dataDir: freshDir("T"), extra: ["--modules", settings.url] });
+    const listed = await until(() => T.lines.find((l) => /plugins: .*patchwork:library tasks-next/.test(l.text)), 30000, "the copy's plugins in the host's registry");
+    const installed = await within(60000, run(repo, tq.url, { importUrl: CLIENT, input: { doc: doc.url }, key: "client-installed" }), "the task that asks for the client");
+    check(29, "task code on a host whose module list names a copy of the tasks package gets that copy's client through the registry, and uses it", used(installed, installed?.from) && installed.from.startsWith(`${copy.url}#`), { ...installed, files: Object.keys(files).length, listed: listed.text.slice(25, 200) });
   }
 
   stopServed();

@@ -1443,7 +1443,7 @@ describe('ownQueue', () => {
   });
 
   it("two copies of the client on one Repo at once: one pointer; the second copy's queue is named, marked, served and asked by nothing", async () => {
-    // @ts-expect-error a second instance of the module, as a second package's kit copy is
+    // @ts-expect-error a second instance of the module, as another build of the package is
     const other = (await import('./task-client.js?copy=2')) as typeof import('./task-client.js');
     expect(other.ownQueue).not.toBe(ownQueue);
     const { repo, account, element } = page();

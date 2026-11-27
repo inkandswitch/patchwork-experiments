@@ -262,7 +262,8 @@ that one machine serves.
   plugins by importing its entry as carried code, so a package whose entry imports by bare name
   anything but the shared names, or one that lists its plugins in its `package.json` (core's
   manifest, which a page reads without importing), is missing from a host's registry, and an http
-  url in the host's settings document is fetched and then left out. Each is package management's
-  to answer.
+  url in the host's settings document is fetched and then left out. A package that needs the
+  tasks package (its client, `tasks-next`) and does not find it in a browser's registry says so
+  and waits for it; nothing else is done about it. Each is package management's to answer.
 - **Slots count threads, not kinds of work.** A run waiting on the network holds a slot a build
   could use. Waits on the first long-waiting work moving here.

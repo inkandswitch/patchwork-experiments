@@ -1,11 +1,10 @@
 /**
- * task-runs.js — a run document, asked of a machine as a task: asking, stopping, reading, and the run's side. [kit: task-runs.js v2]
+ * task-runs.js — a run document, asked of a machine as a task: asking, stopping, reading, and the run's side.
  *
  * For a package whose work is a long run on another machine (a solver), kept
- * in a document of its own. The canonical copy is in the tasks package; a
- * package that asks for runs carries a copy beside task-rules.js and
- * task-client.js, whose rules and asking it applies. It works in a page and
- * in a task's code in Node alike.
+ * in a document of its own. It applies task-rules.js's rules and
+ * task-client.js's asking, and other packages get it with them from the
+ * registry (client.js). It works in a page and in a task's code in Node alike.
  *
  * TWO DOCUMENTS
  *
