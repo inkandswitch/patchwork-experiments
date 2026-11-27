@@ -216,9 +216,7 @@ function workflowLink(doc, title) {
  */
 function modelLabel(config) {
   const effort = config?.params?.reasoning?.effort
-  // OpenAI asks that a plan in use be shown beside the model (its UI/UX guidelines).
-  const plan = config?.providerId === "chatgpt" ? " · ChatGPT plan" : ""
-  return (config?.model ?? "no model").split("/").pop() + (effort ? ` · ${effort}` : "") + plan
+  return (config?.model ?? "no model").split("/").pop() + (effort ? ` · ${effort}` : "")
 }
 
 /**
@@ -252,6 +250,7 @@ export function sessionValue(doc, local) {
     title: titleLine(doc, local.subjectTitle ?? null),
     cost: costLine(doc.usage),
     model: modelLabel(doc.config),
+    provider: doc.config?.providerId ?? "openrouter",
     workflow: workflowLink(doc, local.workflowTitle ?? null),
     place: local.place ?? null,
     hint: hintOf(facts),

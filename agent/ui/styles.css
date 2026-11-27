@@ -124,6 +124,21 @@
 
 .patchwork-agent .agent-model:hover { background: var(--agent-surface); }
 
+/* The provider beside the model: one step to move between OpenRouter and a ChatGPT plan. */
+.patchwork-agent .agent-provider-switch {
+  font: inherit;
+  font-size: 0.72rem;
+  color: var(--agent-muted);
+  background: none;
+  border: 1px solid var(--agent-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 0 2px;
+  max-width: 30%;
+  cursor: pointer;
+}
+
+.patchwork-agent .agent-provider-switch:hover { background: var(--agent-surface); }
+
 /* Usage guides the agent keeps, and where each stands. */
 .patchwork-agent .agent-guides-link {
   font-size: 0.72rem;

@@ -3,7 +3,7 @@
  * no DOM, and what it writes when a person changes something.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { settingsValue, createSettingsPanel, chatGPTState } from "./settings-panel.js"
+import { settingsValue, createSettingsPanel, chatGPTState, switchProvider } from "./settings-panel.js"
 import chatgpt from "../providers/chatgpt.js"
 import { initSession } from "../session/schema.js"
 import { memoryStore } from "../kernel/store.js"
@@ -73,6 +73,21 @@ describe("what the panel shows of a session", () => {
     expect(v.provider.signIn).toBe(true)
     expect(v.provider.options.map((p) => [p.id, p.signIn])).toEqual([["openrouter", false], ["chatgpt", true]])
     expect(v.workflows.placeholders).toEqual(chatgpt.TIER_MODELS)
+  })
+})
+
+describe("moving a session between providers", () => {
+  it("starts a provider on its default, and brings back each provider's last model on return", () => {
+    const config = { providerId: "openrouter", model: "lab/thinker" }
+    expect(switchProvider(config, "chatgpt")).toBe(true)
+    expect([config.providerId, config.model]).toEqual(["chatgpt", chatgpt.DEFAULT_MODEL])
+    config.model = "gpt-6-luna"
+    switchProvider(config, "openrouter")
+    expect(config.model).toBe("lab/thinker")
+    switchProvider(config, "chatgpt")
+    expect(config.model).toBe("gpt-6-luna")
+    expect(config.models).toEqual({ openrouter: "lab/thinker", chatgpt: "gpt-6-luna" })
+    expect(switchProvider(config, "chatgpt")).toBe(false)
   })
 })
 

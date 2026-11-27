@@ -31,6 +31,7 @@ import { taskClient, clientHere } from "../host/import.js"
 import { workflowOf } from "../workflow/plan.js"
 import { getMount, mountForPerson, parkMount } from "../tools/checking.js"
 import { hasCredential, signsIn, onKeyChange, connectAccountKeys } from "../providers/keys.js"
+import { listProviders } from "../providers/index.js"
 import { watchWaiting, renderWaiting, renderWaitingItem } from "./waiting.js"
 import { watchStanding, renderStandingLine } from "./standing.js"
 import { markCitations } from "./citations.js"
@@ -40,7 +41,7 @@ import { createInlineViews } from "./views.js"
 import { watchInstalls } from "./install.js"
 import { watchWorkspace } from "./workspace.js"
 import { createComposer } from "./composer.js"
-import { createSettingsPanel } from "./settings-panel.js"
+import { createSettingsPanel, switchProvider } from "./settings-panel.js"
 import { sessionValue } from "./session-value.js"
 import { watchNames, myContactUrl } from "./names.js"
 import { ensureStyles } from "./styles.js"
@@ -86,12 +87,20 @@ function sessionHeader(guides) {
   workflow.hidden = true
   // What this session has spent, as OpenRouter reports it.
   const cost = el("span", "agent-cost", "")
+  // Which provider runs the session, switched in one step: OpenRouter, or the
+  // person's ChatGPT plan (which OpenAI asks be shown beside the model).
+  const provider = document.createElement("select")
+  provider.className = "agent-provider-switch"
+  provider.title = "Who runs this session: OpenRouter (API key) or your ChatGPT plan"
+  provider.setAttribute("aria-label", "Model provider")
+  for (const p of listProviders()) provider.append(Object.assign(document.createElement("option"), { value: p.id, textContent: p.name }))
   const model = el("button", "agent-model", "model")
   model.title = "Settings: model, provider, sign-in and keys"
-  element.append(status, title, workflow, guides.button, cost, model)
+  element.append(status, title, workflow, guides.button, cost, provider, model)
   return {
     element,
     model,
+    provider,
     render(v) {
       status.dataset.status = v.status
       status.title = v.status
@@ -107,6 +116,7 @@ function sessionHeader(guides) {
       cost.hidden = !v.cost
       cost.title = v.cost?.tooltip ?? ""
       model.textContent = v.model
+      if (provider.value !== v.provider) provider.value = v.provider
     },
   }
 }
@@ -268,6 +278,19 @@ export function AgentTool(handle, element, options = {}) {
   header.model.addEventListener("click", (event) => {
     event.preventDefault()
     settings.toggle()
+  })
+  header.provider.addEventListener("change", () => {
+    const next = header.provider.value
+    let moved = false
+    store.change((d) => {
+      if (!d.config) d.config = {}
+      moved = switchProvider(d.config, next)
+    })
+    if (!moved) return
+    render()
+    // No key or sign-in for it here yet: the settings say how to get one.
+    if (hasCredential(next)) ask()
+    else settings.reveal({ force: true })
   })
   const answers = {
     // One "yes" answers every waiting call the grant covers, not one per call.

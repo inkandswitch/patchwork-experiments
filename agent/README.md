@@ -60,9 +60,10 @@ Four pages say what the code promises. Each describes the code as it is.
 
 ## Model providers
 
-A session's `config.providerId` names who runs it; the settings dialog (the
-header's model button) chooses, and keeps each provider's credential where it
-belongs, never in the session.
+A session's `config.providerId` names who runs it. The header's provider menu
+switches it in one step, and each provider's last model comes back with it
+(`config.models`); the settings dialog (the header's model button) keeps each
+provider's credential where it belongs, never in the session.
 
 - **OpenRouter** (`providers/openrouter.js`): every lab's models for an API
   key, kept with the account's LLM settings.

@@ -124,6 +124,22 @@ function defaultsNote(info, params) {
 }
 
 /**
+ * Move a session to another provider, inside a change of its config. A
+ * model is a provider's, so each provider's last model is kept under
+ * `config.models` and comes back when the session returns to it: moving
+ * between OpenRouter and a ChatGPT plan and back keeps both choices.
+ */
+export function switchProvider(config, next) {
+  const from = config.providerId ?? "openrouter"
+  if (from === next) return false
+  if (!config.models) config.models = {}
+  if (config.model) config.models[from] = config.model
+  config.providerId = next
+  config.model = config.models[next] ?? defaultsOf(next).model ?? DEFAULT_CONFIG.model
+  return true
+}
+
+/**
  * What the ChatGPT part of the panel shows: one of "signed-out", "waiting"
  * (a sign-in begun, the address not pasted yet), "no-plan" (signed in,
  * plan use not granted) or "signed-in".
@@ -407,11 +423,7 @@ export function createSettingsPanel({ store, onKey = () => {}, onChange = () => 
     radio.addEventListener("change", () => {
       if (!radio.checked || radio.value === providerId()) return
       const next = radio.value
-      // A model is a provider's: a session moving to another starts on its default.
-      write((config) => {
-        config.providerId = next
-        config.model = defaultsOf(next).model ?? DEFAULT_CONFIG.model
-      })
+      write((config) => switchProvider(config, next))
       models = null
       loadModels()
       render(store.doc())
@@ -702,8 +714,8 @@ export function createSettingsPanel({ store, onKey = () => {}, onChange = () => 
       if (shown()) shut()
       else open()
     },
-    reveal() {
-      if (!revealed) open()
+    reveal({ force = false } = {}) {
+      if (!revealed || force) open()
     },
     render,
     destroy() {
