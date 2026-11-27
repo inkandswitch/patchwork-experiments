@@ -78,8 +78,15 @@
 // page of this origin can say a build, so any of them can make every host
 // stand down (they then run nothing until a page is loaded again). That
 // denies service; it runs no code.
+//
+// The pool's registry. Core fills this page's plugin registry; the page that
+// runs the pool sends its pool's worker that registry's snapshot as the pool
+// starts and whenever any registry changes, registry types made later
+// included (../registry-snapshot.ts), and the pool's worker hands it on to
+// every run worker. The workers discover nothing themselves.
 
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo/slim';
+import { getAllRegistries } from '@inkandswitch/patchwork-plugins';
 import { acceptanceOf } from '../acceptance';
 import { getAccountDocUrl, getTaskQueues, mergeStorages, storageLosersOf } from '../helpers';
 import { ownQueue, sparesOf, storageUrlOf } from '../task-client.js';
@@ -88,6 +95,7 @@ import { BEAT_MS, LAPSE_MS } from '../task-rules.js';
 import { browserPoolId, browserPoolName } from './pool-id';
 import { linkAdapterClass, PageLinks, type GatedAdapterClass, type LinkableRepo } from './link';
 import { Unsent, type UnsentRepo } from './unsent';
+import { followRegistries } from '../registry-snapshot';
 import type { FromPoolWorker, ServedQueues, ToPoolWorker } from './pool-worker';
 
 declare const __TASKS_BUILD__: number | undefined;
@@ -670,6 +678,7 @@ class BrowserPoolHost implements PoolHost {
       });
       let ended = false;
       let poll: ReturnType<typeof setInterval> | undefined;
+      let unfollow = () => {};
       const links =
         Adapter && typeof this.siteRepo?.networkSubsystem?.addNetworkAdapter === 'function' && typeof this.siteRepo.flush === 'function'
           ? new PageLinks(this.siteRepo, Adapter)
@@ -687,6 +696,7 @@ class BrowserPoolHost implements PoolHost {
           }
           ended = true;
           clearInterval(poll);
+          unfollow();
           worker.terminate();
           links?.removeAll();
           stopSending();
@@ -804,6 +814,7 @@ class BrowserPoolHost implements PoolHost {
         } satisfies ToPoolWorker,
         link ? [link.port] : [],
       );
+      unfollow = followRegistries({ getAllRegistries }, (snapshot) => worker.postMessage({ type: 'plugins', snapshot } satisfies ToPoolWorker));
       // The status the badge shows, and the pool's sign of life. A hidden
       // page's timers slow to one a minute after five minutes, so silence is
       // measured from when a request was sent, not counted in requests.

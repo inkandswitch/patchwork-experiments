@@ -169,7 +169,7 @@ const probe = {
   /**
    * Mounts what a frame mounts of the built package, with this Repo standing
    * in for the site's: every component it registers tagged `background`,
-   * found by tag in its plugin list (this page has no registry; the list is
+   * found by tag in its plugin list (nothing registers the package here; the list is
    * what the package would register), each once, as a frame mounts them;
    * then its titlebar tool. With `background: false`, only the titlebar tool:
    * a frame that mounts no background components.
@@ -445,6 +445,23 @@ const probe = {
     const { appendedHow, appendedWell } = await import('/append-check.js');
     const how = appendedHow(handle.doc(), pieces, seen, { decodeChange, getActorId, getAllChanges });
     return { result, atEnd, ms, firstMs: firstAt === null ? null : firstAt - t0, well: appendedWell(how, pieces), ...how };
+  },
+
+  /**
+   * Installs a package as core's page does once its discovery worker has
+   * described it: its plugins registered under its url at heads, each loading
+   * through the service worker's paths (here served by the harness). The same
+   * package at other heads replaces what it registered before.
+   */
+  async install(url, descriptions) {
+    const { registerPlugins } = await import('@inkandswitch/patchwork-plugins');
+    const { importPluginFromFolderDocUrl } = await import('@inkandswitch/patchwork-filesystem');
+    registerPlugins(descriptions.map((d) => ({ ...d, load: () => importPluginFromFolderDocUrl(url, d.type, d.id) })), url);
+  },
+
+  /** What core's page does when a package leaves the settings. */
+  async uninstall(url) {
+    (await import('@inkandswitch/patchwork-plugins')).unregisterPlugins(url);
   },
 
   /** Asks and waits; how long from asking to the result, in ms. */

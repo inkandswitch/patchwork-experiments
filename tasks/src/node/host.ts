@@ -6,7 +6,8 @@
 //                           [--workers 1] [--sync wss://…] [--new-queue "title"]
 //                           [--data-dir ~/.patchwork-tasks] [--name <host name>]
 //                           [--code-dir <dir>] [--local automerge:<package>=<dir>]…
-//                           [--has unix,ollama]… [--max-heap-mb 4096] [--verbose]
+//                           [--has unix,ollama]… [--max-heap-mb 4096] [--modules automerge:…]
+//                           [--verbose]
 //
 // It is an automerge peer, not a service: nothing listens on a port, so it
 // runs the same on a laptop or on a server anywhere. The pool (../pool.ts)
@@ -57,6 +58,16 @@
 // --new-queue makes a queue, prints its url, and serves it: for a machine
 // that should have a queue of its own.
 //
+// --modules names a module-settings document: the packages installed on this
+// host, as an account's are installed in a browser. The host runs core's
+// ModuleWatcher on it, importing each package from disk (importPackage in
+// webworker-lib.node.ts), and fills its plugin registry as a page's is
+// filled; its threads are sent that registry's snapshot as they start and
+// whenever it changes (../registry-snapshot.ts), so a task's code asks
+// `getRegistry(type).load(id)` as page code does. What the host has kept of
+// the document and its packages fills the registry with no network. A host
+// without --modules has an empty registry.
+//
 // SIGINT or SIGTERM stops it: it takes nothing more, tells each run's code to
 // stop ('stopping'), ends its thread GRACE_MS later if it has not, records
 // each run as lost so that it is taken again, saves, and exits. If that has
@@ -70,12 +81,17 @@ import { join, resolve } from 'node:path';
 import { Repo, initSubduction } from '@automerge/automerge-repo-node';
 import { NodeFSStorageAdapter } from '@automerge/automerge-repo-storage-nodefs';
 import type { AutomergeUrl } from '@automerge/automerge-repo/slim';
+import { ModuleWatcher } from '@inkandswitch/patchwork-filesystem';
+import { getAllRegistries, registerPlugins, unregisterPlugins } from '@inkandswitch/patchwork-plugins';
 import { Pool, type Docs } from '../pool';
 import { GRACE_MS } from '../task-rules.js';
 import type { Acceptance } from '../acceptance';
 import type { Queue } from '../datatype';
 import { QUEUE_DATATYPE_ID } from '../ids';
 import { DEFAULT_MAX_HEAP_MB, NodeExecutor } from './executor';
+import { followRegistries } from '../registry-snapshot';
+import { shareAutomerge } from './task-imports';
+import { importPackage } from './webworker-lib.node';
 
 const DEFAULT_SYNC_SERVER_URL = 'wss://subduction.sync.inkandswitch.com';
 const AUTOMERGE_URL = /^automerge:[1-9A-HJ-NP-Za-km-z]{16,64}$/;
@@ -98,6 +114,8 @@ interface Options {
   codeDir: string | null;
   name: string;
   maxHeapMb: number;
+  /** The module-settings document naming the packages installed here. */
+  modules: string | null;
   verbose: boolean;
 }
 
@@ -115,6 +133,7 @@ function parseArgs(argv: string[]): Options {
     codeDir: null,
     name: hostname(),
     maxHeapMb: DEFAULT_MAX_HEAP_MB,
+    modules: null,
     verbose: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -179,6 +198,9 @@ function parseArgs(argv: string[]): Options {
       case '--max-heap-mb':
         options.maxHeapMb = Number(value());
         break;
+      case '--modules':
+        options.modules = value();
+        break;
       case '--verbose':
         options.verbose = true;
         break;
@@ -186,7 +208,7 @@ function parseArgs(argv: string[]): Options {
         throw new Error(`unknown option ${flag}`);
     }
   }
-  for (const url of [...options.queues, ...options.accept]) {
+  for (const url of [...options.queues, ...options.accept, ...(options.modules ? [options.modules] : [])]) {
     if (!AUTOMERGE_URL.test(url)) {
       throw new Error(`${url} isn't an automerge: url (a package's is given without its heads)`);
     }
@@ -309,17 +331,39 @@ export async function main(argv = process.argv.slice(2)) {
   }
 
   const say = options.verbose ? (line: string) => console.log(`${new Date().toISOString()} ${line}`) : undefined;
+  const codeDir = options.codeDir ?? join(dataDir, 'code');
   const executor = new NodeExecutor({
     script: new URL('./run-thread.mjs', import.meta.url),
     dataDir,
     settings: {
       repoConfig: { syncServerUrl: options.sync },
-      place: { codeDir: options.codeDir ?? join(dataDir, 'code'), local: options.local },
+      place: { codeDir, local: options.local },
     },
     taskBytes: (taskUrl) => repo.export(taskUrl),
     say,
     maxHeapMb: options.maxHeapMb,
   });
+  if (options.modules) {
+    // A package's entry imports what carried code may (task-imports.ts).
+    shareAutomerge();
+    const entries = new Map<string, string>();
+    new ModuleWatcher(
+      repo as any,
+      { user: options.modules },
+      (importUrl, module) => Array.isArray(module?.plugins) && registerPlugins(module.plugins, importUrl),
+      (_entry, importUrl) => unregisterPlugins(importUrl),
+      async (urlAtHeads) => {
+        const { module, entry } = await importPackage(repo, urlAtHeads, codeDir);
+        entries.set(urlAtHeads, entry);
+        return module;
+      },
+    );
+    followRegistries({ getAllRegistries }, (snapshot) => {
+      say?.(`plugins: ${snapshot.map((plugin) => `${plugin.type} ${plugin.id}`).join(', ') || 'none'}`);
+      executor.plugins({ snapshot, packages: Object.fromEntries(snapshot.map((plugin) => [plugin.importUrl, entries.get(plugin.importUrl)!])) });
+    });
+  }
+
   const acceptance: Acceptance = options.acceptAny ? 'any' : options.accept;
   const pool = new Pool({
     repo: repo as unknown as Docs,
@@ -341,6 +385,9 @@ export async function main(argv = process.argv.slice(2)) {
     console.log(`  queue ${url}`);
   }
   console.log(`  has ${pool.has.join(', ')}`);
+  if (options.modules) {
+    console.log(`  packages from ${options.modules}`);
+  }
   if (!options.acceptAny) {
     for (const url of options.accept) {
       console.log(`  code from ${url}${options.local[url] ? ` (from ${options.local[url]})` : ''}`);

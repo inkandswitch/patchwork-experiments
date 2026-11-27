@@ -19,13 +19,25 @@
 // ./webworker-lib (a Repo, and how code is imported; the Node build puts
 // src/node/webworker-lib.node.ts in its place) and in the entry that hands
 // `serve` its port (src/node/run-thread.ts in Node).
+//
+// It has the pool's plugin registry (registry-snapshot.ts): its settings
+// carry the registry's snapshot, and a newer one comes whenever it changes.
+// The registry agrees with it before any task's code is imported, so code
+// that imports `@inkandswitch/patchwork-plugins` finds what the pool has.
 
 import type { DocumentId, Repo } from '@automerge/automerge-repo/slim';
-import { firstAttempt, getRepo, importModule, setUpImportMap, type PlaceSettings } from './webworker-lib';
+import { firstAttempt, getRepo, importModule, pluginMirror, setUpImportMap, type PlaceSettings } from './webworker-lib';
 import { findWhenThere } from './task-client.js';
 import type { RepoConfig } from './repo-config';
 import type { Job, StopReason } from './pool';
 import type { TaskContext } from './job-context';
+import type { Snapshot } from './registry-snapshot';
+
+/** The pool's registry, as a run worker is told it: the snapshot, and on a Node host where each package it names is on disk (by its url at heads). */
+export interface PluginsHere {
+  snapshot: Snapshot;
+  packages?: Record<string, string>;
+}
 
 /** What a run worker is told once, before its first job. */
 export interface RunWorkerSettings {
@@ -40,6 +52,8 @@ export interface RunWorkerSettings {
   link?: MessagePort;
   /** With `link`: the peer id its Repo must have, which the page chose for the link and its end of it admits alone. */
   peerId?: string;
+  /** The pool's registry as it is when the worker starts. */
+  plugins?: PluginsHere;
 }
 
 /** What is said to a run worker. */
@@ -53,7 +67,9 @@ export type ToRunWorker =
   | { type: 'job'; job: Job; task?: Uint8Array }
   | { type: 'abort'; reason: StopReason }
   /** The pool has held this run for a beat and nothing stops it: resolves the code's `ctx.settled`, if it is still this worker's job. */
-  | { type: 'settled'; run: string };
+  | { type: 'settled'; run: string }
+  /** The pool's registry has changed: this is it now. */
+  | { type: 'plugins'; plugins: PluginsHere };
 
 /** What a run worker says, about the job it has. */
 export type FromRunWorker =
@@ -83,6 +99,9 @@ export function serve(port: RunWorkerPort) {
   let settling: Settling | null = null;
   /** What the sync server has said it holds, heard for the Repo's whole life (see `serverReports`). */
   let reports: ServerReports | null = null;
+  /** This worker's registry made to agree with what it is handed, once it is set up; and the latest it was handed. */
+  let registry: Promise<(plugins: PluginsHere) => void> | null = null;
+  let plugins: PluginsHere = { snapshot: [] };
 
   const say = (message: FromRunWorker) => {
     try {
@@ -107,8 +126,17 @@ export function serve(port: RunWorkerPort) {
             return made;
           });
         repo.catch(() => {}); // said by each job that needs it
+        plugins = settings.plugins ?? plugins;
+        registry = setUpImportMap(settings.importMap ?? {}, settings.baseURI ?? '')
+          .then(() => pluginMirror())
+          .then((agree) => (agree(plugins), agree));
+        registry.catch((error) => console.warn(`tasks: this run worker has no plugin registry: ${messageOf(error)}`));
         break;
       }
+      case 'plugins':
+        plugins = message.plugins;
+        void registry?.then((agree) => agree(plugins), () => {});
+        break;
       case 'job': {
         const controller = new AbortController();
         running = controller;
@@ -157,6 +185,8 @@ export function serve(port: RunWorkerPort) {
       if (task) {
         docs.import(task, { docId: documentIdOf(job.taskUrl) });
       }
+      // what the pool's registry has, before the code can ask it
+      await registry?.catch(() => {});
       const module = await importModule(job.importUrl);
       const fn = module?.default;
       if (typeof fn !== 'function') {

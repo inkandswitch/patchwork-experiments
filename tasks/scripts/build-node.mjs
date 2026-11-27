@@ -37,8 +37,15 @@ await build({
   // The Repo and its storage come from node_modules at run time: they bring
   // wasm and a socket library. A task's code is handed that same Repo
   // package and the Automerge it uses (src/node/task-imports.ts), which a
-  // copy bundled in here would not be.
-  external: ["@automerge/automerge-repo-node", "@automerge/automerge-repo-storage-nodefs"],
+  // copy bundled in here would not be. So is the plugin registry, which the
+  // host and its threads fill and task code asks; and core's ModuleWatcher
+  // comes from there too.
+  external: [
+    "@automerge/automerge-repo-node",
+    "@automerge/automerge-repo-storage-nodefs",
+    "@inkandswitch/patchwork-plugins",
+    "@inkandswitch/patchwork-filesystem",
+  ],
   // a CommonJS dependency bundled into an ES module still asks for `require`
   banner: { js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);' },
   plugins: [

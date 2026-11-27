@@ -242,5 +242,23 @@ that one machine serves.
   waits may match only after the limit, which costs the wait and never a write. Knowing that the
   other side's heads *include* the run's would be enough, and needs a question the Repo does not
   yet answer cheaply.
+- **What the pool's registry exposes, for the isolation work.** A pool's workers have the
+  plugin registry (README, "A pool has the plugin registry"). So plugin code of every installed
+  package can be loaded by any task's code in a pool: in a browser, in a run worker of the site's
+  origin, beside the run's input and keys; on a Node host, in a thread with its user's privileges
+  (their files, environment, processes and network), and a host's main thread imports every
+  listed package's entry to describe it. A lookup by id is not pinned to a package or a version:
+  whichever installed package last registered that id answers, in the version installed. These
+  are the isolation work's to answer, with trust as a whole.
+- **What package management will own.** Two devices with different versions of a package
+  installed run different code for the same task. A plugin whose package imports another
+  package's files by automerge url loads only where that package is on the device. Packages the
+  site serves over http (its own list, beside the account's) are not in a pool's registry: the
+  snapshot carries only packages kept in automerge, and a Node host cannot import https at all;
+  what a headless host's equivalent of the site's list is has not been decided. A host imports
+  each new version of a package and never unloads the old one, so a long-lived host grows with
+  every update. A Node host materialises only the entry's top-level directory, so a plugin whose
+  code reaches above it (`dist/` importing `../src/`) fails there. Each is package management's
+  to answer.
 - **Slots count threads, not kinds of work.** A run waiting on the network holds a slot a build
   could use. Waits on the first long-waiting work moving here.

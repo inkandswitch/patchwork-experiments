@@ -21,6 +21,11 @@
 // run wrote ('keep', answered 'kept'; executor.ts). A pool given no port
 // links none of its run workers.
 //
+// The pool's registry (../registry-snapshot.ts). The page sends its
+// registry's snapshot ('plugins') as the pool starts and whenever it changes;
+// this worker hands the latest to every run worker (executor.ts) and
+// discovers nothing itself.
+//
 // Its Pool starts only once this worker holds WORKER_LOCK, which it keeps
 // for as long as it lives. The page lets go of the pool's lock as soon as it
 // has called `terminate()` on this worker, but a worker busy in synchronous
@@ -33,6 +38,7 @@ import type { AutomergeUrl } from '@automerge/automerge-repo/slim';
 import type { Acceptance } from '../acceptance';
 import { Pool, type Docs } from '../pool';
 import type { RepoConfig } from '../repo-config';
+import type { Snapshot } from '../registry-snapshot';
 import { getRepo, setUpImportMap } from '../webworker-lib';
 import { BrowserExecutor, type RunWorkerLink } from './executor';
 
@@ -65,6 +71,8 @@ export type ToPoolWorker =
   | { type: 'kept'; ask: number; problem?: string }
   /** The queues to serve from now on, with whose code to run from each. */
   | { type: 'serve'; queues: ServedQueues }
+  /** The page's registry, as it is now. */
+  | { type: 'plugins'; snapshot: Snapshot }
   | { type: 'status' }
   /**
    * Stop. With `drain`, take nothing new, let the runs going on end by
@@ -122,6 +130,8 @@ function linkRunWorker(): RunWorkerLink {
 }
 
 let pool: Promise<Pool | null> | null = null;
+let executor: BrowserExecutor | null = null;
+let plugins: Snapshot = [];
 let queues: ServedQueues = {};
 let stopping = false;
 
@@ -150,6 +160,10 @@ scope.onmessage = ({ data }) => {
         void pool?.then((it) => it?.serve(queues));
       }
       break;
+    case 'plugins':
+      plugins = data.snapshot;
+      executor?.plugins({ snapshot: plugins });
+      break;
     case 'link':
       naming.get(data.id)?.(typeof data.peer === 'string' ? data.peer : null);
       naming.delete(data.id);
@@ -174,7 +188,7 @@ async function start(settings: Extract<ToPoolWorker, { type: 'start' }>): Promis
   // Linked, its Repo has the peer id the page chose, which is all the page's end admits.
   const peer = settings.link && settings.peer ? settings.peer : `task-pool-${crypto.randomUUID()}`;
   const repo = await getRepo(settings.repoConfig, peer, {}, settings.link);
-  const executor = new BrowserExecutor({
+  executor = new BrowserExecutor({
     settings: {
       repoConfig: settings.repoConfig,
       importMap: settings.importMap,
@@ -183,6 +197,7 @@ async function start(settings: Extract<ToPoolWorker, { type: 'start' }>): Promis
     taskBytes: (taskUrl) => repo.export(taskUrl),
     link: settings.link ? linkRunWorker : undefined,
   });
+  executor.plugins({ snapshot: plugins });
   return new Pool({
     repo: repo as unknown as Docs,
     id: settings.id,

@@ -112,9 +112,9 @@ class StandInWorker {
   say(data: unknown) {
     this.onmessage?.({ data });
   }
-  /** What it was told, status requests left out. */
+  /** What it was told, status requests and the registry's snapshot left out. */
   orders() {
-    return this.told.filter((message) => message.type !== 'status').map((message) => (message.type === 'start' ? { type: 'start', queues: message.queues } : message));
+    return this.told.filter((message) => message.type !== 'status' && message.type !== 'plugins').map((message) => (message.type === 'start' ? { type: 'start', queues: message.queues } : message));
   }
 }
 

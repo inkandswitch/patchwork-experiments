@@ -35,9 +35,12 @@
 // done is said in the run's log, and the ending is then heard all the same.
 // An error that escapes the worker after its ending waits behind the ending
 // too, so a run that returned is not recorded as one whose worker died.
+//
+// Each run worker is told the pool's registry (../registry-snapshot.ts) in
+// its settings, and again, in its turn, whenever the page sends a newer one.
 
 import type { Executor, Job, RunWorker, StopReason, WorkerEvents } from '../pool';
-import type { FromRunWorker, RunWorkerSettings, ToRunWorker } from '../run-worker';
+import type { FromRunWorker, PluginsHere, RunWorkerSettings, ToRunWorker } from '../run-worker';
 
 /** A run worker's link to the page's Repo, as the pool's worker makes it (pool-worker.ts). */
 export interface RunWorkerLink {
@@ -72,8 +75,19 @@ export interface BrowserExecutorOptions {
 export class BrowserExecutor implements Executor {
   /** The numbers of run workers that have not really ended, as far as this pool knows. */
   private readonly held = new Set<number>();
+  /** The pool's registry as the page last sent it, and how to tell each live run worker a newer one. */
+  private registry: PluginsHere = { snapshot: [] };
+  private readonly live = new Set<(plugins: PluginsHere) => void>();
 
   constructor(private readonly options: BrowserExecutorOptions) {}
+
+  /** The pool's registry is this from now on: every live run worker is told, and every new one starts with it. */
+  plugins(plugins: PluginsHere) {
+    this.registry = plugins;
+    for (const tell of this.live) {
+      tell(plugins);
+    }
+  }
 
   start(events: WorkerEvents): RunWorker {
     const { settings, taskBytes } = this.options;
@@ -95,6 +109,7 @@ export class BrowserExecutor implements Executor {
         return;
       }
       over = true;
+      this.live.delete(toldPlugins);
       link?.end();
       this.free(n);
       queueMicrotask(() => events.exit());
@@ -185,7 +200,7 @@ export class BrowserExecutor implements Executor {
       worker.postMessage(
         {
           type: 'settings',
-          settings: { ...settings, place, ...(link && peer !== null ? { link: link.port, peerId: peer } : {}) },
+          settings: { ...settings, place, plugins: this.registry, ...(link && peer !== null ? { link: link.port, peerId: peer } : {}) },
         } satisfies ToRunWorker,
         link && peer !== null ? [link.port] : [],
       );
@@ -203,6 +218,8 @@ export class BrowserExecutor implements Executor {
         })
         .catch((error) => console.error('tasks: telling a run worker something failed', error));
     };
+    const toldPlugins = (plugins: PluginsHere) => inTurn(() => ({ type: 'plugins', plugins }));
+    this.live.add(toldPlugins);
 
     return {
       run: (job: Job) =>

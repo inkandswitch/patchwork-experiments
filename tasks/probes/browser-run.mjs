@@ -79,7 +79,20 @@
 // background component until 21 does, and then lets it go. Check 23 runs
 // on tab A's pool, after 19. Checks 24 and 22 run next, in a browser
 // context of their own, in that order, then 26 to 29, 41, 42 and 30 in
-// another, 40 in another, and 25 last, over every request seen.
+// another, 40 in another, 43 to 47 in another, and 25 last, over every
+// request seen.
+//
+// Checks 43 to 47 are about the pool's plugin registry: the page's registry
+// (the stand-in has core's registry module in its import map) is given a
+// scratch package's library as core's page registers a package its discovery
+// worker described, and the package's files are served at the paths the
+// site's service worker serves a package kept in automerge at
+// (/automerge%3A<id>%23<heads>/…), by this process, from memory; every url
+// is made up. Task code given as a data: URL asks the registry with the code
+// a page writes, in a run worker: the library's module; a package added, then
+// updated (new heads), then removed, as task code asked afterwards sees it;
+// and a run worker started later has the registry at once. With
+// --no-network, the same.
 // A copy of dist/ stamped as a newer build is served at /dist-newer.
 //
 // Each check prints one line with what was observed; the process exits 1 if
@@ -99,7 +112,7 @@ import { extname } from "node:path";
 import { sleep } from "./cdp.mjs";
 import { guardChrome, killChrome } from "./chrome-guard.mjs";
 import { BEAT_MS, LISTEN_MS } from "../src/task-rules.js";
-import { Repo as NodeRepo, initSubduction as initNodeSubduction } from "@automerge/automerge-repo-node";
+import { Repo as NodeRepo, initSubduction as initNodeSubduction, encodeHeads, generateAutomergeUrl, parseAutomergeUrl, stringifyAutomergeUrl } from "@automerge/automerge-repo-node";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG = resolve(HERE, "..");
@@ -135,6 +148,10 @@ const WRITES = dataUrl(
 // awaits ctx.settled, and says when it resolved, or why it rejected; then waits `holdMs`
 const SETTLES = dataUrl(
   "export default async ({ holdMs }, ctx) => { try { await ctx.settled; } catch (error) { ctx.log(error.message); return { settled: false }; } const at = Date.now(); ctx.log('settled at ' + at); await new Promise((r) => setTimeout(r, holdMs)); return { settled: true, at }; };",
+);
+// the code a page writes, given as a data: URL: each id's library from the registry, or that there is none; then waits `holdMs`
+const ASKS = dataUrl(
+  'import { getRegistry } from "@inkandswitch/patchwork-plugins"; export default async ({ ids, holdMs = 0 }) => { const registry = getRegistry("patchwork:library"); const out = {}; for (const id of ids) { if (!registry.has(id)) { out[id] = "none"; continue; } const { module } = await registry.load(id); out[id] = { version: module.version, sum: module.add(2, 3) }; } await new Promise((r) => setTimeout(r, holdMs)); out.where = typeof window === "undefined" ? "worker" : "page"; return out; };',
 );
 // says where it ran: a pool's run worker has no window
 const WHERE = dataUrl("export default () => (typeof window === 'undefined' ? 'worker' : 'page');");
@@ -216,6 +233,8 @@ const vendor = {
   "automerge-subduction-slim": "@automerge/automerge-subduction/slim",
   "solid-js": "solid-js",
   "solid-js-web": "solid-js/web",
+  "patchwork-plugins": "@inkandswitch/patchwork-plugins",
+  "patchwork-filesystem": "@inkandswitch/patchwork-filesystem",
 };
 const entryPoints = {};
 for (const [name, spec] of Object.entries(vendor)) {
@@ -245,11 +264,12 @@ await build({
     },
     {
       // The MessageChannel adapter extends the site's Repo's NetworkAdapter,
-      // as the site's import map gives it one Repo: not a copy of its own.
+      // and the registry and the filesystem read urls with it, as the site's
+      // import map gives them one Repo: not a copy of their own.
       name: "one-repo-for-the-adapter",
       setup(b) {
         b.onResolve({ filter: /^@automerge\/automerge-repo\/slim$/ }, (args) =>
-          /automerge-repo-network-messagechannel/.test(args.importer) ? b.resolve("site-automerge-repo/slim", { resolveDir: PKG, kind: args.kind }) : undefined,
+          /automerge-repo-network-messagechannel|patchwork-(plugins|filesystem)/.test(args.importer) ? b.resolve("site-automerge-repo/slim", { resolveDir: PKG, kind: args.kind }) : undefined,
         );
       },
     },
@@ -278,8 +298,16 @@ if (!stamp) throw new Error("the build stamp was not found in dist: has pool-hos
 // Served like cdp.mjs's server, but `no-cache` where that one says
 // `no-store`: Chrome keeps no page served `no-store` in its back/forward
 // cache, and check 7 is about a page that it does keep there.
-const MIME = { ".js": "text/javascript", ".html": "text/html", ".wasm": "application/wasm", ".map": "application/json" };
+const MIME = { ".js": "text/javascript", ".html": "text/html", ".wasm": "application/wasm", ".map": "application/json", ".json": "application/json" };
+/** Scratch packages, served as the site's service worker serves a package kept in automerge: by its url at heads, each path's content. */
+const scratch = new Map();
 const server = createServer((req, res) => {
+  const [, first, ...rest] = new URL(req.url, "http://x").pathname.split("/");
+  if (/^automerge%3A/i.test(first)) {
+    const content = scratch.get(decodeURIComponent(first))?.[rest.join("/")];
+    if (content === undefined) return void res.writeHead(404).end();
+    return void res.writeHead(200, { "content-type": MIME[extname(rest.at(-1))] ?? "application/octet-stream", "cache-control": "no-cache" }).end(content);
+  }
   const path = join(root, decodeURIComponent(new URL(req.url, "http://x").pathname));
   if (!path.startsWith(root) || !existsSync(path) || statSync(path).isDirectory()) return void res.writeHead(404).end();
   res.writeHead(200, { "content-type": MIME[extname(path)] ?? "application/octet-stream", "cache-control": "no-cache" });
@@ -505,6 +533,77 @@ const tickedSaid = (got, liveRunWorkers) =>
 /** In a page: what its site Repo finds of `url` within `ms` (from its storage, its links or its server), or null. */
 const siteFinds = (url, ms = 5000) =>
   `Promise.race([probe.site.find(${J(url)}).then((h) => JSON.parse(JSON.stringify(h.doc())), (e) => ({ unavailable: String(e?.message ?? e) })), new Promise((r) => setTimeout(() => r(null), ${ms}))])`;
+
+/**
+ * 43 to 47: the pool's plugin registry, in a browser context of its own. A
+ * scratch package is a made-up url at heads whose files this process serves
+ * (see `scratch`); installing one is what core's page does with what its
+ * discovery worker described (probe.install), and removing one what it does
+ * when the package leaves the settings (probe.uninstall).
+ */
+async function registryInPool() {
+  const { documentId } = parseAutomergeUrl(generateAutomergeUrl());
+  const lib = (n) => stringifyAutomergeUrl({ documentId, heads: encodeHeads([n.toString(16).padStart(64, "0")]) });
+  const late = stringifyAutomergeUrl({ documentId: parseAutomergeUrl(generateAutomergeUrl()).documentId, heads: encodeHeads(["a".repeat(64)]) });
+  const tag = Math.random().toString(36).slice(2, 8);
+  const LIB = `probe-lib-${tag}`;
+  const LATE = `probe-late-${tag}`;
+  const ids = [LIB, LATE];
+  const publish = (url, id, version) =>
+    scratch.set(url, {
+      "package.json": J({ name: `probe-${id}`, type: "module", main: "dist/index.js" }),
+      "dist/index.js": `export const plugins = [{ type: "patchwork:library", id: ${J(id)}, name: "Probe library", load: () => import("./lib.js") }];\n`,
+      "dist/lib.js": `export const version = ${version};\nexport const add = (a, b) => a + b;\n`,
+    });
+  const described = (id) => [{ type: "patchwork:library", id, name: "Probe library" }];
+  publish(lib(1), LIB, 1);
+  publish(lib(2), LIB, 2);
+  publish(late, LATE, 1);
+  const offline = NO_NETWORK ? ", with no network" : "";
+
+  const { browserContextId } = await send("Target.createBrowserContext", {});
+  try {
+    const R = await tab("R", "/probe/index.html", browserContextId);
+    await R.js("probe.makeAccount()");
+    await R.js("probe.join()");
+    await R.js(`probe.install(${J(lib(1))}, ${J(described(LIB))})`);
+    await R.js("probe.mount()");
+    const running = await R.waitFor("probe.status()?.state === 'running'", 30_000);
+    await sleep(LISTEN_MS);
+    const asks = (holdMs = 0) => R.js(`probe.timeRun(${J(ASKS)}, ${J({ ids, holdMs })})`, 60_000);
+
+    const first = await asks();
+    check(
+      `43 task code in a browser's run worker asks the registry for a scratch package's library and gets its module${offline}`,
+      !!running && first.result?.where === "worker" && first.result[LIB]?.version === 1 && first.result[LIB]?.sum === 5 && first.result[LATE] === "none",
+      `pool ${running ? "running" : J(await R.js("probe.status()"))}; the task gave ${J(first.result)} in ${first.ms.toFixed(0)} ms`,
+    );
+
+    await R.js(`probe.install(${J(late)}, ${J(described(LATE))})`);
+    const added = await asks();
+    check(`44 a package installed in the page is there for task code asked afterwards${offline}`, added.result?.[LATE]?.version === 1 && added.result?.[LIB]?.version === 1, `the task gave ${J(added.result)}`);
+
+    await R.js(`probe.install(${J(lib(2))}, ${J(described(LIB))})`);
+    const updated = await asks();
+    check(`45 a package updated (its url at new heads) gives task code asked afterwards its new module${offline}`, updated.result?.[LIB]?.version === 2, `the task gave ${J(updated.result)}`);
+
+    await R.js(`probe.uninstall(${J(late)})`);
+    const removed = await asks();
+    check(`46 a package removed from the page is gone for task code asked afterwards${offline}`, removed.result?.[LATE] === "none" && removed.result?.[LIB]?.version === 2, `the task gave ${J(removed.result)}`);
+
+    // two at once, one run worker alive: the second starts now, and its task asks at once
+    const before = liveWorkers(R, /run-worker-entry/).length;
+    const two = await Promise.all([asks(1500), asks(1500)]);
+    const after = liveWorkers(R, /run-worker-entry/).length;
+    check(
+      `47 a run worker started after the registry changed has it at once${offline}`,
+      before === 1 && after === 2 && two.every(({ result }) => result?.[LIB]?.version === 2 && result?.[LATE] === "none"),
+      `run workers ${before} before, ${after} after; the two tasks gave ${J(two.map((t) => t.result))}`,
+    );
+  } finally {
+    await send("Target.disposeBrowserContext", { browserContextId }).catch(() => {});
+  }
+}
 
 /**
  * 31 to 36 (--lifetimes), a checker's: the link through the lifetimes of a
@@ -1643,6 +1742,7 @@ try {
     }
   }
 
+  await registryInPool();
   await unsentSent();
 
   if (LIFETIMES) {

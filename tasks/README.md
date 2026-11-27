@@ -148,8 +148,9 @@ What a task's code may import depends on where it runs:
 - On a Node host: relative and absolute paths (its own neighbours), Node's built-in modules
   (`node:fs`, `fs`), and by bare name only `@automerge/automerge`, `@automerge/automerge/slim`,
   `@automerge/automerge-repo` and `@automerge/automerge-repo/slim`, which are the host's own
-  copies, the same module instances as `ctx.repo`'s. Any other bare name fails with an error
-  naming what it may import. Code of a package given with `--local` also imports the other
+  copies, the same module instances as `ctx.repo`'s, and `@inkandswitch/patchwork-plugins`, the
+  thread's own registry (see below). Any other bare name fails with an error naming what it may
+  import. Code of a package given with `--local` also imports the other
   dependencies in its own `node_modules`.
 - In a browser's pool: relative paths and URLs, and every name in the page's import map. On the
   site that includes `@automerge/automerge`, `@automerge/automerge-repo` and their `/slim` builds
@@ -158,6 +159,34 @@ What a task's code may import depends on where it runs:
 
 So code that imports Automerge by bare name (to append to a text with `splice`, say) runs
 unchanged on either; `probes/append-task.js` is such a task.
+
+**A pool has the plugin registry.** A pool is a headless Patchwork: the same documents, the same
+installed packages, the same plugin registry, and no DOM. So a task's code asks the registry as
+page code does, and nothing is added to `ctx` for it:
+
+```js
+import { getRegistry } from '@inkandswitch/patchwork-plugins';
+
+export default async (input, ctx) => {
+  const { module } = await getRegistry('patchwork:library').load('some-library');
+  return module.doSomething(input);
+};
+```
+
+A pool's workers find out nothing themselves. In a browser, the tab that runs the pool sends its
+pool's worker its own registry, which core filled, as the pool starts and whenever any registry
+changes (registry types made later too); the pool's worker hands it to each run worker, in its
+settings as it starts and again on each change. What crosses is a snapshot: every plugin of a
+package kept in automerge, as its plain description, with the url, at heads, its package is
+imported from (`src/registry-snapshot.ts`). A run worker's registry is made to agree with the
+latest snapshot before any task's code is imported, and each plugin's `load()` imports its
+package in that worker, through the site's service worker, as the page's does. On a Node host,
+`--modules automerge:…` names a module-settings document: the host runs core's ModuleWatcher on
+it, imports each package from disk (its files written by the same materialise that fetches task
+code), fills its own registry, and sends its threads the same snapshot with where each package is
+on disk. A host without `--modules` has an empty registry. A plugin whose code needs the DOM is
+listed like any other, and fails only when something in a pool loads it; a lookup by id gives
+whichever package registered that id, in the version the pool has installed.
 
 What must not happen twice guards itself. A run's id is in the task's `runs` before its code is
 called, after every earlier run, so code can look there (and write its run's id beside its
@@ -336,6 +365,8 @@ the queue's document, what is heard on the queue's channel), and never starting 
   directory.
 - `--code-dir <dir>` where fetched code goes, if not under the data directory.
 - `--name <name>` what views call this pool (the machine's hostname).
+- `--modules automerge:…` a module-settings document: the packages installed on this host, whose
+  plugins its registry has (see Writing a task).
 - `--has unix,ollama` what this machine has, as plain labels: a task that needs a label runs only
   on a pool that has it. Repeat it, or separate labels with commas. A host always has `node` and
   `pool:<its id>`, and prints what it has as it starts.
@@ -451,6 +482,7 @@ above it (a Node host's thread) has no link.
 | Work that needs a device this browser is not (`needs: ['node']`, another browser's `pool:` id) | waits in the queue until one of the person's machines that has it can be reached, and the queue browser says what it waits for; where this browser does not have the list of the person's queues (the account names a storage document that has not arrived), `doWork` looks for it as `findWhenThere` does, about half a minute, and then rejects with "The list of your task queues could not be found, so nothing was changed.", having asked nothing |
 | Work where the tasks package is not installed in this browser | `doWork` asks own all the same; nothing here runs it, and it waits on the queue for the person's other machines; `poolHere()` is false, and the tools that ask say so where they show it waiting ("this browser takes no part, because the tasks package is not installed here") |
 | Stopping work | works for work in this browser, from any of its tabs: `stopWork`, a tool's signal, or the queue browser's Stop writes a stop the pool reads |
+| Task code asking the pool's plugin registry | works: the page's registry reaches the pool's workers by local messages only, and a plugin's package loads from what this browser keeps (browser-run checks 43 to 47 with `--no-network`); a Node host restarted with no network fills its registry from the settings document and packages kept in its data directory, and its threads load them from disk (node-run check 27). Waits: a package this device has never had is missing from the registry until it arrives, and a Node host whose settings document never arrived has an empty registry until it arrives (core's watcher does not look again for a settings document its first look failed to find, so then until the host is restarted with it within reach). Breaks: a plugin whose package imports another package's files that this device has never had fails to load, as it does on the page |
 
 | When a partition heals | |
 |---|---|
@@ -526,7 +558,7 @@ says). The probes run real
 processes and say what they saw, one line per check or measurement:
 
 - `probes/node-run.mjs` (after `pnpm build:node`; `--only 1,16` runs only the checks named):
-  Node hosts through the real sync server, 21 checks. 1, latency of ten do-nothing tasks on a
+  Node hosts through the real sync server, 27 checks. 1, latency of ten do-nothing tasks on a
   host alone that has served the queue for two and a half seconds, none taken as late as the
   hold (and how long the first task, asked as the host started, waited); 2,
   logs and progress heard while running and kept; 3, a throw fails once; 4, a spin cancelled,
@@ -544,8 +576,13 @@ processes and say what they saw, one line per check or measurement:
   the other host, each once and none yielded (when each run started is printed, not checked:
   the other host takes its two at once if it heard the first full before it saw them, and
   otherwise a hold later); 21, a task awaiting `ctx.settled` has it resolve no sooner than a beat
-  after its run was recorded, and one stopped within the beat has it reject, `cancelled`. Checks
-  9, 17 and 19 print when each run started, too.
+  after its run was recorded, and one stopped within the beat has it reject, `cancelled`; 22 to 27,
+  a host given `--modules` (a settings document and scratch packages the probe makes in
+  automerge): task code given as a `data:` URL asks the registry for a library and gets its module
+  (22), a package added (23), updated (24) and removed (25) is seen by task code asked afterwards,
+  a thread started later has the registry at once (26), and the host restarted with its sync
+  server unreachable, given a task written straight into its storage, fills its registry from what
+  it kept and runs the task (27). Checks 9, 17 and 19 print when each run started, too.
 - `probes/write-path.mjs` (after `pnpm build:node`): measures, and checks nothing, how a
   document travels between a task on a Node host and its asker through the sync server, per
   size: written by the task (`out`), made by the asker for the task (`in`), twenty at once
@@ -554,9 +591,9 @@ processes and say what they saw, one line per check or measurement:
   the chrome slot) measures `out`, `in` and `ack` for a browser's run worker.
 - `probes/browser-run.mjs` (after `pnpm build`, in the chrome slot): the built package on a
   stand-in page in a throwaway Chrome profile, with no sync server but for checks 24, 22, 26
-  to 30 and 40 to 42, 33 checks. The page mounts
+  to 30 and 40 to 42, 38 checks. The page mounts
   what a frame does: the components the package tags `background`, found by tag in its plugin
-  list (the page has no registry), and the titlebar tool. One pool per profile across tabs; a
+  list (nothing registers the package itself there), and the titlebar tool. One pool per profile across tabs; a
   closed, navigated, frozen or hidden holder tab; a newer build taking over; cancel of spinning
   code, also code that read and wrote through `ctx.repo`; two run workers at once; a run that
   wrote with no server to reach says so; a pool worker that errors or dies; `served()` and the
@@ -585,7 +622,12 @@ processes and say what they saw, one line per check or measurement:
   a document it has open, and the document the task made (given at once when asked) in its own
   site Repo when `doWork` resolves, and follows and stops its work with
   `watchWork` and `stopWork`; and (30) closing the tab that runs the pool, that second tab's pool
-  is linked to its own site Repo and runs its next work; and (40) on such a
+  is linked to its own site Repo and runs its next work; and (43 to 47) in a context of its own,
+  the page's registry (core's registry module, in the stand-in's import map) given a scratch
+  package as core's page registers one, its files served at the service worker's paths: task code
+  given as a `data:` URL gets the library's module in a run worker (43), a package installed (44),
+  updated (45) and removed (46) is seen by task code asked afterwards, and a run worker started
+  later has the registry at once (47); and (40) on such a
   page, named the real sync server and cut off by DevTools' network emulation, a task counts its
   runs in a document the page made online and makes one, the page makes one of its own, and the
   page is closed the moment `doWork` resolves; a Node Repo of the probe's on the sync server

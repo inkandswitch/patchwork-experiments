@@ -8,7 +8,10 @@
 // is made from and uses. Code that appends to a text with Automerge's
 // `splice` then runs unchanged on any device. It has to be the same module
 // instance, not an equal copy: a second copy of Automerge has its own wasm,
-// which cannot operate on documents the first one made.
+// which cannot operate on documents the first one made. The plugin registry,
+// `@inkandswitch/patchwork-plugins`, is shared the same way: what task code
+// asks is the thread's own registry, the one the pool's snapshot fills
+// (../registry-snapshot.ts).
 //
 // Which code is a task's is known from how it came in, not from where it is
 // on disk: what `importTask` imports, and every module that imports in turn
@@ -37,7 +40,11 @@ export const SHARED = [
   '@automerge/automerge/slim',
   '@automerge/automerge-repo',
   '@automerge/automerge-repo/slim',
+  '@inkandswitch/patchwork-plugins',
 ] as const;
+
+/** The shared name that is not the Repo's: resolved as the host's own code resolves it. */
+const REGISTRY = '@inkandswitch/patchwork-plugins';
 
 /**
  * Where a task's code came from: `carried` with the task (fetched from
@@ -109,8 +116,13 @@ export function shareAutomerge(): void {
         // The Repo's own package is `@automerge/automerge-repo` by name, and
         // its modules import Automerge as ES modules: resolved from inside
         // it, as an import, these are the files its own imports were.
+        // The registry is the host's own, the instance its run thread fills.
         const url =
-          specifier === '@automerge/automerge-repo' ? repoUrl : next(specifier, { ...context, parentURL: repoUrl }).url;
+          specifier === '@automerge/automerge-repo'
+            ? repoUrl
+            : specifier === REGISTRY
+              ? next(specifier, context).url
+              : next(specifier, { ...context, parentURL: repoUrl }).url;
         shared.set(specifier, url);
         return { url, shortCircuit: true };
       }
@@ -151,7 +163,7 @@ export function shareAutomerge(): void {
     resolvingShared = false;
   }
   if (shared.size !== SHARED.length) {
-    throw new Error(`this thread could not resolve ${SHARED.filter((s) => !shared.has(s)).join(', ')} from its Repo's package`);
+    throw new Error(`this thread could not resolve ${SHARED.filter((s) => !shared.has(s)).join(', ')}`);
   }
 }
 

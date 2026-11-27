@@ -6,7 +6,7 @@
   /dist-newer), and the site's modules, bundled from this package's own
   node_modules, at /vendor, under the names the site's import map gives them
   (the site gives `@automerge/automerge` and `@automerge/automerge-repo` their
-  slim builds too).
+  slim builds too), core's plugin registry and its filesystem among them.
 -->
 <html>
   <head>
@@ -23,7 +23,9 @@
           "@automerge/automerge-repo-network-messagechannel": "/vendor/automerge-repo-network-messagechannel.js",
           "@automerge/automerge-subduction/slim": "/vendor/automerge-subduction-slim.js",
           "solid-js": "/vendor/solid-js.js",
-          "solid-js/web": "/vendor/solid-js-web.js"
+          "solid-js/web": "/vendor/solid-js-web.js",
+          "@inkandswitch/patchwork-plugins": "/vendor/patchwork-plugins.js",
+          "@inkandswitch/patchwork-filesystem": "/vendor/patchwork-filesystem.js"
         }
       }
     </script>

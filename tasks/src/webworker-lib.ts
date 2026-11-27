@@ -2,6 +2,8 @@ import type { Repo } from '@automerge/automerge-repo/slim';
 import type { RepoConfig } from './repo-config';
 import { TASKS_DATABASE, TASKS_HEADS_CHANNEL } from './ids';
 import { onOrigin } from './import-url';
+import { mirror } from './registry-snapshot';
+import type { PluginsHere } from './run-worker';
 
 // This file is what a run worker (run-worker.ts) needs from wherever it is
 // running: a Repo, and a way to load a task's code. This one is a browser's.
@@ -31,6 +33,22 @@ export interface PlaceSettings {
  */
 export const importModule = (importUrl: string): Promise<any> =>
   (self as any).importShim(onOrigin(importUrl, self.location.origin));
+
+/**
+ * This worker's plugin registry, the one a task's code gets by importing
+ * `@inkandswitch/patchwork-plugins` through the page's import map, made to
+ * agree with each snapshot it is handed. A plugin's load() is core's
+ * `importPluginFromFolderDocUrl`, as on the page: its package is served by
+ * this site's service worker.
+ */
+export async function pluginMirror(): Promise<(plugins: PluginsHere) => void> {
+  const [registry, files] = await Promise.all([
+    (self as any).importShim('@inkandswitch/patchwork-plugins'),
+    (self as any).importShim('@inkandswitch/patchwork-filesystem'),
+  ]);
+  const agree = mirror(registry.getRegistry, files.importPluginFromFolderDocUrl);
+  return ({ snapshot }) => agree(snapshot);
+}
 
 let importMapReady: Promise<void> | null = null;
 let repoModulesReady: Promise<any> | null = null;

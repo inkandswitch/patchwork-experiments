@@ -19,6 +19,15 @@
 // tasks name its files the way a browser names a package's. Given the url of
 // this package as published, the hosts fetch it from automerge instead.
 //
+// Checks 22 to 27 are about a host's plugin registry (--modules): scratch
+// packages, made here in automerge and listed in a module-settings document
+// made here, are installed on a host, and task code given as a data: URL asks
+// the registry for a library plugin with the code a page writes. A package
+// added, updated and removed is seen by task code asked afterwards; a thread
+// started later has the registry at once; and the host restarted with its
+// sync server unreachable, given a task written straight into its storage,
+// fills its registry from what it kept and runs that task.
+//
 // Each check prints one line with what was observed. --only runs only the
 // checks named (the hosts' errors are always checked).
 import { spawn } from "node:child_process";
@@ -27,6 +36,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Repo, initSubduction } from "@automerge/automerge-repo-node";
+import { NodeFSStorageAdapter } from "@automerge/automerge-repo-storage-nodefs";
 import { BEAT_MS, GRACE_MS, HOLD_MS, LAPSE_MS, LISTEN_MS, listTask } from "../src/task-rules.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -114,8 +124,8 @@ const freshDir = (label) => {
   return dir;
 };
 /** Starts a host and resolves once it has said who it is. Every line it says is kept with when it was heard. */
-function startHost(label, { queue, dataDir, accept = ANY, workers = 2, wait = true, has = [] }) {
-  const child = spawn(process.execPath, [join(ROOT, "dist-node/host.mjs"), "--queue", queue, ...accept, "--data-dir", dataDir, "--workers", String(workers), "--name", label, "--sync", SYNC, "--verbose", ...has.flatMap((label) => ["--has", label])], { stdio: ["ignore", "pipe", "pipe"] });
+function startHost(label, { queue, dataDir, accept = ANY, workers = 2, wait = true, has = [], extra = [] }) {
+  const child = spawn(process.execPath, [join(ROOT, "dist-node/host.mjs"), "--queue", queue, ...accept, "--data-dir", dataDir, "--workers", String(workers), "--name", label, "--sync", SYNC, "--verbose", ...has.flatMap((label) => ["--has", label]), ...extra], { stdio: ["ignore", "pipe", "pipe"] });
   const host = { label, child, dataDir, lines: [], pool: null, exit: null };
   host.exited = new Promise((r) => child.on("exit", (code) => ((host.exit = { code, at: Date.now() }), r(host.exit))));
   for (const stream of [child.stdout, child.stderr]) {
@@ -565,9 +575,115 @@ try {
     }
   }
 
+  // 22–27. a host's plugin registry (--modules)
+  if (want(22, 23, 24, 25, 26, 27)) {
+    // A package kept in automerge as pushwork keeps one: a folder document
+    // mapping each path to its file's document, pinned to the file's heads.
+    const pin = (handle) => handle.view(handle.heads()).url;
+    const publish = (files, was = null) => {
+      const handles = was?.handles ?? new Map();
+      for (const [path, content] of Object.entries(files)) {
+        const handle = handles.get(path);
+        if (!handle) handles.set(path, repo.create({ "@patchwork": { type: "file" }, content }));
+        else if (handle.doc().content !== content) handle.change((d) => (d.content = content));
+      }
+      const root = was?.root ?? repo.create({ "@patchwork": { type: "directory" } });
+      root.change((d) => {
+        for (const [path, handle] of handles) if (d[path] !== pin(handle)) d[path] = pin(handle);
+      });
+      return { root, handles, url: root.url };
+    };
+    const tag = Math.random().toString(36).slice(2, 8);
+    const library = (id, version) => ({
+      "package.json": JSON.stringify({ name: `probe-${id}`, type: "module", main: "dist/index.js" }),
+      "dist/index.js": `export const plugins = [{ type: "patchwork:library", id: ${JSON.stringify(id)}, name: "Probe library", load: () => import("./lib.js") }];\n`,
+      "dist/lib.js": `export const version = ${version};\nexport const add = (a, b) => a + b;\n`,
+    });
+    const LIB = `probe-lib-${tag}`;
+    const LATE = `probe-late-${tag}`;
+    const lib = publish(library(LIB, 1));
+    const settings = repo.create({ "@patchwork": { type: "patchwork:module-settings" }, modules: [lib.url] });
+    await repo.flush();
+    // on the sync server before a host looks: a source a watcher cannot find as it starts is skipped
+    const other = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
+    for (const url of [settings.url, lib.url, ...[...lib.handles.values()].map((h) => h.url)]) await within(30000, other.find(url), "a scratch package's document on the sync server");
+    await other.shutdown();
+    // the code a page writes, given as a data: URL: each id's library, or that there is none
+    const ASKS = code(`import { getRegistry } from "@inkandswitch/patchwork-plugins";
+export default async function ({ ids, holdMs = 0 }) {
+  const registry = getRegistry("patchwork:library");
+  const out = {};
+  for (const id of ids) {
+    if (!registry.has(id)) { out[id] = "none"; continue; }
+    const { module } = await registry.load(id);
+    out[id] = { version: module.version, sum: module.add(2, 3) };
+  }
+  await new Promise((resolve) => setTimeout(resolve, holdMs));
+  return out;
+}`);
+    const ids = [LIB, LATE];
+    const mq = await newQueue("node probe queue, plugins");
+    const dirM = freshDir("M");
+    const M = await startHost("M", { queue: mq.url, dataDir: dirM, extra: ["--modules", settings.url] });
+    const asks = (input, key) => within(60000, run(repo, mq.url, { importUrl: ASKS, input, key }), "the task that asks the registry");
+    /** Waits for the host to say its registry, after `since`, as `test` wants it. */
+    const said = (since, test, what) => until(() => M.lines.find((l) => l.at >= since && /plugins: /.test(l.text) && test(l.text)), 30000, what);
+    const t0 = Date.now();
+    await said(t0 - 60000, (text) => text.includes(LIB), "the host's registry to have the library");
+    const first = await asks({ ids }, "plugins-first");
+    check(22, "task code on a Node host asks the registry for a scratch package's library and gets its module", first[LIB]?.version === 1 && first[LIB]?.sum === 5 && first[LATE] === "none", { ...first, registeredInMs: M.lines.find((l) => /plugins: .*probe-lib/.test(l.text)).at - M.lines[0].at });
+
+    const late = publish(library(LATE, 1));
+    await repo.flush();
+    const tAdd = Date.now();
+    settings.change((d) => d.modules.push(late.url));
+    await said(tAdd, (text) => text.includes(LATE), "the added package in the host's registry");
+    const added = await asks({ ids }, "plugins-added");
+    check(23, "a package added to the host's module settings is there for task code asked afterwards", added[LATE]?.version === 1 && added[LIB]?.version === 1, { ...added, seenInMs: M.lines.find((l) => l.at >= tAdd && l.text.includes(LATE)).at - tAdd });
+
+    const tUpdate = Date.now();
+    publish(library(LIB, 2), lib);
+    await said(tUpdate, () => true, "the updated package in the host's registry");
+    const updated = await asks({ ids }, "plugins-updated");
+    check(24, "a package updated (new heads) gives task code asked afterwards its new module", updated[LIB]?.version === 2, { ...updated, seenInMs: M.lines.find((l) => l.at >= tUpdate && /plugins: /.test(l.text)).at - tUpdate });
+
+    const tRemove = Date.now();
+    settings.change((d) => d.modules.splice(d.modules.indexOf(late.url), 1));
+    await said(tRemove, (text) => !text.includes(LATE), "the removed package gone from the host's registry");
+    const removed = await asks({ ids }, "plugins-removed");
+    check(25, "a package removed from the host's module settings is gone for task code asked afterwards", removed[LATE] === "none" && removed[LIB]?.version === 2, { ...removed, goneInMs: M.lines.find((l) => l.at >= tRemove && /plugins: /.test(l.text)).at - tRemove });
+
+    // two at once on a host with two slots, one thread alive: the second starts now, and its task asks at once
+    const tTwo = Date.now();
+    const two = await Promise.all([asks({ ids, holdMs: 1500 }, "plugins-two-a"), asks({ ids, holdMs: 1500 }, "plugins-two-b")]);
+    const newThread = M.lines.find((l) => l.at >= tTwo && /thread 1 started/.test(l.text));
+    check(26, "a thread started after the registry changed has it at once", !!newThread && two.every((r) => r[LIB]?.version === 2 && r[LATE] === "none"), { started: newThread?.text.slice(25), results: two });
+
+    // 27. no network: the host stopped, a task written straight into what it
+    // keeps, and the host started again with its sync server unreachable
+    sigterm(M);
+    await within(2 * GRACE_MS + 5000, M.exited, "host M to stop");
+    const kept = () => new Repo({ network: [], storage: new NodeFSStorageAdapter(join(dirM, "pool")) });
+    const before = kept();
+    const offline = await ask(before, mq.url, { importUrl: ASKS, input: { ids }, key: "plugins-offline" });
+    await before.flush();
+    await before.shutdown();
+    const tOffline = Date.now();
+    const M2 = await startHost("M-offline", { queue: mq.url, dataDir: dirM, extra: ["--modules", settings.url, "--sync", "ws://127.0.0.1:9"] });
+    const ended = await until(() => M2.lines.find((l) => l.at >= tOffline && /run \w+ (returned|threw)/.test(l.text)), 60000, "the offline host to run the task");
+    const filled = M2.lines.find((l) => /plugins: .*probe-lib/.test(l.text));
+    sigterm(M2);
+    await within(2 * GRACE_MS + 5000, M2.exited, "host M-offline to stop");
+    const after = kept();
+    const runs = (await within(10000, after.find(offline.taskUrl), "the offline task in the host's storage")).doc().runs;
+    await after.shutdown();
+    const result = runs.find((r) => r.status === "succeeded")?.result;
+    check(27, "a host restarted with no network fills its registry from what it kept, and task code gets the library", result?.[LIB]?.version === 2 && result?.[LATE] === "none", { result, registeredInMs: filled ? filled.at - M2.lines[0].at : null, ran: ended.text.slice(25), runs: runs.map((r) => r.status) });
+  }
+
   stopServed();
   // what the hosts said that would worry an operator
-  const worries = hosts.flatMap((h) => h.lines.filter((l) => !(l.at >= (h.killedAt ?? Infinity)) && /^pool:|crashed|Error/.test(l.text) && !/another host is running/.test(l.text)).map((l) => `[${h.label}] ${l.text.slice(0, 200)}`));
+  const worries = hosts.flatMap((h) => h.lines.filter((l) => !(l.at >= (h.killedAt ?? Infinity)) && /^pool:|crashed|Error/.test(l.text) && !/another host is running/.test(l.text) && !/ECONNREFUSED 127\.0\.0\.1:9\b/.test(l.text)).map((l) => `[${h.label}] ${l.text.slice(0, 200)}`));
   check("–", "the hosts reported no errors", worries.length === 0, worries.slice(0, 6));
   exitCode = failed ? 1 : 0;
 } catch (err) {
