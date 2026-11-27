@@ -5,7 +5,6 @@ import {
   Switch,
   createEffect,
   createMemo,
-  createResource,
   createSignal,
   on,
   onCleanup,
@@ -17,7 +16,6 @@ import type { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
 import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
 
 import type {
-  AccountDocShape,
   FileDocShape,
   PandocContextDoc,
   PandocSourceSettings,
@@ -34,7 +32,7 @@ import {
 } from "../pandoc/formats";
 import { isFileLikeDoc } from "../files";
 import { focusName, resolveFocused, type FocusResolution } from "../resolveFocused";
-import { selectedDocUrl } from "../lib/selected-doc";
+import { selectedDocUrl, subscribe } from "../lib/selected-doc";
 import { DocPicker, type DocPickSelection } from "./DocPicker";
 
 type OutputContent = {
@@ -82,22 +80,19 @@ function previewHtml(res: ConversionResult): string {
 }
 
 export function PandocContextTool(
-  handle: DocHandle<AccountDocShape>,
   element: PatchworkViewElement
 ) {
   const dispose = render(
-    () => <PandocContextEditor handle={handle} element={element} />,
+    () => <PandocContextEditor element={element} />,
     element
   );
   return () => dispose();
 }
 
 function PandocContextEditor(props: {
-  handle: DocHandle<AccountDocShape>;
   element: PatchworkViewElement;
 }) {
   const repo = props.element.repo as unknown as Repo;
-  const account = props.handle;
 
   // ─── focused document ───
   const rawUrl = selectedDocUrl(props.element);
@@ -106,22 +101,10 @@ function PandocContextEditor(props: {
   const [focusedDoc] = useDocument<FileDocShape>(() => focusedUrl(), { repo });
 
   // ─── account-scoped settings (remembers output format per source) ───
-  const [settingsUrl] = createResource(
-    () => account.url,
-    async () => {
-      const existing = account.doc()?.pandocContextUrl;
-      if (existing) return existing;
-      const h = repo.create<PandocContextDoc>();
-      h.change((d) => {
-        d["@patchwork"] = { type: "pandoc-context" };
-        d.title = "Pandoc conversions";
-        d.sources = {};
-      });
-      account.change((d) => {
-        d.pandocContextUrl = h.url;
-      });
-      return h.url;
-    }
+  const settingsUrl = subscribe<AutomergeUrl | undefined>(
+    props.element,
+    { type: "patchwork:tool-storage", toolId: "pandoc-context" },
+    undefined
   );
   const [settingsDoc, settingsHandleRes] = useDocument<PandocContextDoc>(
     () => settingsUrl(),

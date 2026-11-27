@@ -65,8 +65,3 @@ export type PandocContextDoc = {
 	/** keyed by source documentId */
 	sources: Record<string, PandocSourceSettings>
 }
-
-/** The bit of the account doc the context sidebar reads/writes. */
-export type AccountDocShape = {
-	pandocContextUrl?: AutomergeUrl
-}
