@@ -168,10 +168,17 @@ page code does, and nothing is added to `ctx` for it:
 import { getRegistry } from '@inkandswitch/patchwork-plugins';
 
 export default async (input, ctx) => {
-  const { module } = await getRegistry('patchwork:library').load('some-library');
+  const { module } = await getRegistry('patchwork:library').loadWhenReady('some-library');
   return module.doSomething(input);
 };
 ```
+
+`loadWhenReady` waits until the plugin is registered: a Node host fills its registry a quarter of
+a second to a second or so after it starts, and a package that arrives while a run waits is found
+then. It waits for as long as the run does where the pool has no such package. `load` answers at
+once, with `undefined` for a plugin the registry does not have, and also for a load that is under
+way when its package moves to a new version (core's registry drops it); asked again, it gives the
+new version. A module the code already has stays the version it was.
 
 A pool's workers find out nothing themselves. In a browser, the tab that runs the pool sends its
 pool's worker its own registry, which core filled, as the pool starts and whenever any registry
@@ -187,6 +194,13 @@ code), fills its own registry, and sends its threads the same snapshot with wher
 on disk. A host without `--modules` has an empty registry. A plugin whose code needs the DOM is
 listed like any other, and fails only when something in a pool loads it; a lookup by id gives
 whichever package registered that id, in the version the pool has installed.
+
+A Node host's registry has less than a page's. It finds a package's plugins by importing its
+entry as carried code, so a package whose entry imports by bare name anything but the shared
+names above is missing from it, and the host logs that it failed to import it. A package that
+lists its plugins in its `package.json` (`patchwork.plugins`, core's manifest) is missing too, as
+is any package the settings document names by an http url, which the host's watcher still tries
+to fetch (`package.json` beside it), failing with no network.
 
 What must not happen twice guards itself. A run's id is in the task's `runs` before its code is
 called, after every earlier run, so code can look there (and write its run's id beside its
@@ -482,7 +496,7 @@ above it (a Node host's thread) has no link.
 | Work that needs a device this browser is not (`needs: ['node']`, another browser's `pool:` id) | waits in the queue until one of the person's machines that has it can be reached, and the queue browser says what it waits for; where this browser does not have the list of the person's queues (the account names a storage document that has not arrived), `doWork` looks for it as `findWhenThere` does, about half a minute, and then rejects with "The list of your task queues could not be found, so nothing was changed.", having asked nothing |
 | Work where the tasks package is not installed in this browser | `doWork` asks own all the same; nothing here runs it, and it waits on the queue for the person's other machines; `poolHere()` is false, and the tools that ask say so where they show it waiting ("this browser takes no part, because the tasks package is not installed here") |
 | Stopping work | works for work in this browser, from any of its tabs: `stopWork`, a tool's signal, or the queue browser's Stop writes a stop the pool reads |
-| Task code asking the pool's plugin registry | works: the page's registry reaches the pool's workers by local messages only, and a plugin's package loads from what this browser keeps (browser-run checks 43 to 47 with `--no-network`); a Node host restarted with no network fills its registry from the settings document and packages kept in its data directory, and its threads load them from disk (node-run check 27). Waits: a package this device has never had is missing from the registry until it arrives, and a Node host whose settings document never arrived has an empty registry until it arrives (core's watcher does not look again for a settings document its first look failed to find, so then until the host is restarted with it within reach). Breaks: a plugin whose package imports another package's files that this device has never had fails to load, as it does on the page |
+| Task code asking the pool's plugin registry | works: the page's registry reaches the pool's workers by local messages only, and a plugin's package loads from what this browser keeps (browser-run checks 43 to 47 with `--no-network`); a Node host restarted with no network fills its registry from the settings document and packages kept in its data directory, and its threads load them from disk (node-run check 27). Waits: a package this device has never had is missing from the registry until it arrives, and a Node host whose settings document never arrived has an empty registry until it arrives (core's watcher does not look again for a settings document its first look failed to find, so then until the host is restarted with it within reach). Breaks: a plugin whose package imports another package's files that this device has never had fails to load, as it does on the page; a package a Node host's settings document names by an http url is fetched by the host's watcher, which fails and tries again (such a package is not in a pool's registry with the network either) |
 
 | When a partition heals | |
 |---|---|

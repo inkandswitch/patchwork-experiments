@@ -90,6 +90,23 @@ export function followRegistries(plugins: Registries, send: (snapshot: Snapshot)
   };
 }
 
+/** The latest of what a pool's executor is sent (its registry), and each live run worker to tell of a newer one. */
+export class Latest<T> {
+  private readonly told = new Set<(value: T) => void>();
+  constructor(public value: T) {}
+  set(value: T) {
+    this.value = value;
+    for (const tell of this.told) {
+      tell(value);
+    }
+  }
+  /** Tells `tell` each newer value until the function this returns is called. */
+  follow(tell: (value: T) => void) {
+    this.told.add(tell);
+    return () => this.told.delete(tell);
+  }
+}
+
 /**
  * Makes the registries `getRegistry` gives agree with each snapshot it is
  * handed: registers what is new or changed, each with a load() that is

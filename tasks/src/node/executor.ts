@@ -20,6 +20,7 @@ import { Worker } from 'node:worker_threads';
 import { join } from 'node:path';
 import type { Executor, Job, RunWorker, StopReason, WorkerEvents } from '../pool';
 import type { FromRunWorker, PluginsHere, RunWorkerSettings, ToRunWorker } from '../run-worker';
+import { Latest } from '../registry-snapshot';
 
 export interface NodeExecutorOptions {
   /** The run worker's script: run-thread.mjs beside the host. */
@@ -41,19 +42,10 @@ export const DEFAULT_MAX_HEAP_MB = 4096;
 
 export class NodeExecutor implements Executor {
   private readonly held = new Set<number>();
-  /** The host's registry as it last changed, and how to tell each live thread a newer one. */
-  private registry: PluginsHere = { snapshot: [] };
-  private readonly live = new Set<(plugins: PluginsHere) => void>();
+  /** The host's registry as it last changed: every new thread starts with it, and every live one is told a newer one. */
+  readonly plugins = new Latest<PluginsHere>({ snapshot: [] });
 
   constructor(private readonly options: NodeExecutorOptions) {}
-
-  /** The host's registry is this from now on: every live thread is told, and every new one starts with it. */
-  plugins(plugins: PluginsHere) {
-    this.registry = plugins;
-    for (const tell of this.live) {
-      tell(plugins);
-    }
-  }
 
   /** How many threads are alive: from start until their 'exit'. */
   get threads() {
@@ -78,10 +70,9 @@ export class NodeExecutor implements Executor {
     const tell = (message: ToRunWorker) => worker.postMessage(message);
     tell({
       type: 'settings',
-      settings: { ...settings, plugins: this.registry, place: { ...settings.place, storageDir: join(dataDir, 'slots', String(n)) } },
+      settings: { ...settings, plugins: this.plugins.value, place: { ...settings.place, storageDir: join(dataDir, 'slots', String(n)) } },
     });
-    const toldPlugins = (plugins: PluginsHere) => tell({ type: 'plugins', plugins });
-    this.live.add(toldPlugins);
+    const unfollow = this.plugins.follow((plugins) => tell({ type: 'plugins', plugins }));
 
     worker.on('message', (message: FromRunWorker) => {
       switch (message?.type) {
@@ -106,7 +97,7 @@ export class NodeExecutor implements Executor {
     // An error that escapes the task's code ends the thread; 'exit' follows, and says so to the pool.
     worker.on('error', (error) => events.log(`its worker crashed: ${error?.message ?? error}`));
     worker.on('exit', (code) => {
-      this.live.delete(toldPlugins);
+      unfollow();
       this.held.delete(n);
       say?.(`thread ${n} ended (code ${code}; ${this.held.size} alive)`);
       events.exit();

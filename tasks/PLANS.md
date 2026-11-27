@@ -258,7 +258,11 @@ that one machine serves.
   what a headless host's equivalent of the site's list is has not been decided. A host imports
   each new version of a package and never unloads the old one, so a long-lived host grows with
   every update. A Node host materialises only the entry's top-level directory, so a plugin whose
-  code reaches above it (`dist/` importing `../src/`) fails there. Each is package management's
+  code reaches above it (`dist/` importing `../src/`) fails there. A Node host finds a package's
+  plugins by importing its entry as carried code, so a package whose entry imports by bare name
+  anything but the shared names, or one that lists its plugins in its `package.json` (core's
+  manifest, which a page reads without importing), is missing from a host's registry, and an http
+  url in the host's settings document is fetched and then left out. Each is package management's
   to answer.
 - **Slots count threads, not kinds of work.** A run waiting on the network holds a slot a build
   could use. Waits on the first long-waiting work moving here.

@@ -360,7 +360,7 @@ export async function main(argv = process.argv.slice(2)) {
     );
     followRegistries({ getAllRegistries }, (snapshot) => {
       say?.(`plugins: ${snapshot.map((plugin) => `${plugin.type} ${plugin.id}`).join(', ') || 'none'}`);
-      executor.plugins({ snapshot, packages: Object.fromEntries(snapshot.map((plugin) => [plugin.importUrl, entries.get(plugin.importUrl)!])) });
+      executor.plugins.set({ snapshot, packages: Object.fromEntries(snapshot.map((plugin) => [plugin.importUrl, entries.get(plugin.importUrl)!])) });
     });
   }
 

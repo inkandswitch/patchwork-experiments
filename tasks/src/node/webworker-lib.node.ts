@@ -1,9 +1,8 @@
 // What a run worker needs from wherever it is running (see ../webworker-lib.ts),
 // for a Node process: the build puts this file in that one's place.
 
-import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join, resolve, sep } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Repo, WebSocketEndpoint, initSubduction } from '@automerge/automerge-repo-node';
 import { NodeFSStorageAdapter } from '@automerge/automerge-repo-storage-nodefs';
@@ -13,7 +12,7 @@ import type { PlaceSettings } from '../webworker-lib';
 import { mirror } from '../registry-snapshot';
 import type { PluginsHere } from '../run-worker';
 import { parseAutomergeImport } from '../import-url';
-import { materialise } from './package-files';
+import { materialise, packageText } from './package-files';
 import { importTask } from './task-imports';
 
 /** Node resolves imports by itself. */
@@ -141,21 +140,15 @@ function localCopy(packageUrl: string, path: string): string | null {
  * A package kept in automerge, at the heads `urlAtHeads` names, imported from
  * disk: what core's page does through the service worker
  * (`importPackageFromFolderDocUrl`), with materialise in its place. Its
- * package.json is read, its entry resolved with core's conditions, and the
- * entry's files written beside it and imported as code carried from elsewhere
- * (task-imports.ts). The host's ModuleWatcher imports packages with this
- * (host.ts); `entry` is where it is on disk, which a run thread loads from.
+ * package.json is read from its documents, its entry resolved with core's
+ * conditions, and the entry's directory written to disk and imported as code
+ * carried from elsewhere (task-imports.ts). The host's ModuleWatcher imports
+ * packages with this (host.ts); `entry` is where it is on disk, which a run
+ * thread loads from.
  */
 export async function importPackage(repo: any, urlAtHeads: string, codeDir: string): Promise<{ module: any; entry: string }> {
-  const hash = urlAtHeads.indexOf('#');
-  const at = (path: string) => ({
-    docUrl: urlAtHeads,
-    packageUrl: hash < 0 ? urlAtHeads : urlAtHeads.slice(0, hash),
-    heads: hash < 0 ? null : urlAtHeads.slice(hash + 1),
-    path,
-    search: '',
-  });
-  const manifest = JSON.parse(await readFile(await materialise(repo, at('package.json'), codeDir), 'utf8'));
+  const at = (path: string) => parseAutomergeImport(`/${encodeURIComponent(urlAtHeads)}/${path}`)!;
+  const manifest = JSON.parse(await packageText(repo, at('package.json')));
   const entry = await materialise(repo, at(resolvePackageExport(manifest).replace(/^\.\//, '')), codeDir);
   return { module: await importTask(pathToFileURL(entry).href, 'carried'), entry };
 }

@@ -98,6 +98,16 @@ function bytesOf(content: unknown): Uint8Array {
   throw new Error('a file in the package has content that is neither text nor bytes');
 }
 
+/** The text of the one file `wantedImport.path` names, read from the package's documents, writing nothing. */
+export async function packageText(repo: AnyRepo, { docUrl, packageUrl, path }: AutomergeImport): Promise<string> {
+  const root = (await within(repo.find(docUrl), `the package ${packageUrl}`)).doc();
+  const url = (await listFiles(repo, root, path)).get(path);
+  if (!url) {
+    throw new Error(`there is no ${path} in the package ${docUrl}`);
+  }
+  return Buffer.from(bytesOf((await within(repo.find(url), `${path} of ${packageUrl}`)).doc()?.content)).toString('utf8');
+}
+
 // packages whose every url names its heads never change: where each landed
 const settled = new Map<string, string>();
 

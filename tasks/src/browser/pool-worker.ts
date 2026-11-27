@@ -162,7 +162,7 @@ scope.onmessage = ({ data }) => {
       break;
     case 'plugins':
       plugins = data.snapshot;
-      executor?.plugins({ snapshot: plugins });
+      executor?.plugins.set({ snapshot: plugins });
       break;
     case 'link':
       naming.get(data.id)?.(typeof data.peer === 'string' ? data.peer : null);
@@ -197,7 +197,7 @@ async function start(settings: Extract<ToPoolWorker, { type: 'start' }>): Promis
     taskBytes: (taskUrl) => repo.export(taskUrl),
     link: settings.link ? linkRunWorker : undefined,
   });
-  executor.plugins({ snapshot: plugins });
+  executor.plugins.set({ snapshot: plugins });
   return new Pool({
     repo: repo as unknown as Docs,
     id: settings.id,
