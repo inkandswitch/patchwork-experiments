@@ -32,12 +32,13 @@ export function standIn() {
       t.from.push(from);
       return t.packageUrl && `/${encodeURIComponent(t.packageUrl)}/${path}`;
     },
-    /** lists the ask in its queue's `jobs` under its key, with a task doc `{ state, error }` of its own */
-    async ask(repo, queueUrl, ask) {
-      t.asked.push({ queueUrl, ...ask });
+    /** lists the ask in its queue's `jobs` under the run's url, with a task doc `{ state, error }` of its own, whose url the run doc keeps */
+    async askRun(repo, queueUrl, run, importUrl, options) {
+      t.asked.push({ queueUrl, importUrl, input: { run: run.url }, key: run.url });
       const task = repo.add({ state: "waiting", error: null });
-      (await repo.find(queueUrl)).change((q) => void (q.jobs[ask.key] = { taskUrl: task.url }));
-      return { key: ask.key, taskUrl: task.url };
+      (await repo.find(queueUrl)).change((q) => void (q.jobs[run.url] = { taskUrl: task.url }));
+      run.change((d) => void (d.task = task.url), options);
+      return task.url;
     },
     /** takes the run off its queue and its task says cancelled; false where the queue doesn't list it */
     async cancelRun(repo, run, runUrl) {

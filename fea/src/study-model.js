@@ -441,8 +441,7 @@ export async function runStudy(ctx) {
     d.selected = run.url;
   });
   // a task keyed by the run doc's url (asking twice is asking once), whose url the run doc keeps
-  const { taskUrl } = await ctx.tasks.ask(ctx.repo, study.server, { importUrl: code, input: { run: run.url }, key: run.url });
-  run.change((d) => void (d.task = taskUrl), ctx.message ? { message: ctx.message } : undefined);
+  await ctx.tasks.askRun(ctx.repo, study.server, run, code, ctx.message ? { message: ctx.message } : undefined);
   return { ok: true, url: run.url, pools };
 }
 

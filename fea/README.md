@@ -272,7 +272,8 @@ study tool, the run tool, the agent's tools and the scene source ask the
 plugin registry for the library `tasks-next`, and so does a run's code, in a
 pool, which always has it. Where the Tasks package isn't installed, the study
 and run tools say so and carry on once it arrives; the agent's tools refuse,
-saying so.
+saying so; a scene's build of an FEA source waits for it and says nothing,
+since a build has no place to say why.
 
 A run doc is made when you press Run, with the setup and the kept part
 frozen into it, so every run records exactly what was analysed. It also

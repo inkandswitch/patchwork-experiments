@@ -158,8 +158,7 @@ async function ask(title, shape, size, { tweak = null } = {}) {
     const { ["@patchwork"]: _type, study: _study, ...frozen } = plain((await repo.find(study.doc().part.kept)).doc());
     frozen.title = shape;
     run = await repo.create2(newRun({ studyUrl: study.url, serverUrl: queueUrl, setup: tweak(normalizeSetup(study.doc().setup)), part: frozen, by: "net probe", now: Date.now(), title: `net probe · ${title}` }));
-    const { taskUrl } = await tasks.ask(repo, queueUrl, { importUrl: code, input: { run: run.url }, key: run.url });
-    run.change((d) => void (d.task = taskUrl));
+    await tasks.askRun(repo, queueUrl, run, code);
   }
   await repo.flush?.();
   const taskUrl = run.doc().task;
