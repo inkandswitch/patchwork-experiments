@@ -59,6 +59,26 @@ export const PENDING_MS = 30 * 60 * 1000
 /** A token is renewed when it has less than this left, so a run is handed one with room in it. */
 export const FRESH_MS = 10 * 60 * 1000
 
+/**
+ * The least a token handed out may have left. A run gives one up with less
+ * than a minute left (providers/chatgpt.js RENEW_MARGIN_MS); nothing here
+ * hands out one it would give up at once.
+ */
+export const MIN_LEFT_MS = 2 * 60 * 1000
+
+/**
+ * Tokens a run gave up (it ended for a fresh one): never handed out again,
+ * so the next ask renews instead, whatever the clocks say. Without this a run
+ * whose clock runs ahead of the page's would end for a token the page still
+ * thinks fresh, be asked again with the same one, and loop.
+ */
+const refused = new Set()
+
+/** A run ended for a fresh token: this one is not handed out again. */
+export function refuse(token) {
+  if (typeof token === "string" && token) refused.add(token)
+}
+
 /** Refresh errors that mean the sign-in is over (OpenAI's "refresh errors"). */
 const SPENT = new Set(["invalid_grant", "invalid_refresh_token", "token_expired", "refresh_token_expired", "refresh_token_invalidated", "refresh_token_reused"])
 
@@ -197,7 +217,7 @@ export async function begin({ registration = null, storage = globalThis.localSto
   const pending =
     kept && now - kept.at < PENDING_MS && (kept.clientId ?? null) === clientId
       ? kept
-      : { state: random(24), nonce: random(24), verifier: random(48), clientId, redirectUri: REDIRECT_URI, at: now, opened: false }
+      : { state: random(24), nonce: random(24), verifier: random(48), clientId, subject: registration?.subject ?? null, redirectUri: REDIRECT_URI, at: now, opened: false }
   const verifier = pending.verifier
   write(storage, PENDING_KEY, pending)
 
@@ -218,15 +238,29 @@ export async function begin({ registration = null, storage = globalThis.localSto
     const record = readRecord(storage)
     if (record?.clientId === pending.clientId && record.idToken) params.set("id_token_hint", record.idToken)
     if (registration?.email) params.set("login_hint", registration.email)
+    // A returning sign-in shows no consent screen, so plan use declined once
+    // can only be allowed again by asking for consent outright (OpenAI's
+    // "ChatGPT plan use isn't enabled").
+    if (record?.clientId === pending.clientId && !record.scopes?.includes(PLAN_SCOPE)) params.set("prompt", "consent")
   }
   return `${AUTHORIZE}?${params}`
 }
 
-/** The person has gone to ChatGPT with the attempt: from now on a view shows where to paste the address. */
-export function opened(storage = globalThis.localStorage) {
+/** Whether a sign-in begun here is still there to finish (or to open). */
+export function pendingFresh(storage = globalThis.localStorage, now = Date.now()) {
+  const pending = read(storage, PENDING_KEY)
+  return !!(pending && now - pending.at < PENDING_MS)
+}
+
+/**
+ * The person has gone to ChatGPT with the attempt: from now on a view shows
+ * where to paste the address, for the next PENDING_MS from now (a link made
+ * when the panel opened may be clicked much later).
+ */
+export function opened(storage = globalThis.localStorage, now = Date.now()) {
   const pending = read(storage, PENDING_KEY)
   if (!pending) return
-  write(storage, PENDING_KEY, { ...pending, opened: true })
+  write(storage, PENDING_KEY, { ...pending, opened: true, at: now })
   changed()
 }
 
@@ -258,7 +292,7 @@ export function parseCallback(pasted) {
  * was granted, and keep the result. Resolves the record; the caller keeps the
  * registration where the account's other devices find it.
  */
-export async function finish(pasted, { storage = globalThis.localStorage, fetchImpl = fetch, now = Date.now } = {}) {
+export async function finish(pasted, { storage = globalThis.localStorage, fetchImpl = fetch, now = Date.now, locks } = {}) {
   const pending = read(storage, PENDING_KEY)
   if (!pending || now() - pending.at > PENDING_MS) throw new Error("This sign-in has expired or was not started here. Start again.")
   const back = parseCallback(pasted)
@@ -270,6 +304,7 @@ export async function finish(pasted, { storage = globalThis.localStorage, fetchI
   if (!back.code) throw new Error("That address has no sign-in code in it. Paste the whole address.")
   // A new registration says which client it made; a returning one may not say, and must not say another.
   const clientId = pending.clientId ?? back.client_id ?? null
+  if (clientId === "dynamic_agent_client") throw new Error("ChatGPT did not finish registering Patchwork (it sent back the registration entry point, not a client id). Start again.")
   if (!clientId) throw new Error("ChatGPT did not finish registering Patchwork (no client id came back). Start again.")
   if (pending.clientId && back.client_id && back.client_id !== pending.clientId) throw new Error("ChatGPT answered for a different registration. Start again.")
 
@@ -292,13 +327,19 @@ export async function finish(pasted, { storage = globalThis.localStorage, fetchI
   }
 
   const identity = checkIdToken(tokens.id_token, { clientId, nonce: pending.nonce, now: now() })
+  // The account this registration belongs to: as this device last knew it, or
+  // as the account's settings said when the attempt began (a second device).
   const previous = readRecord(storage)
-  if (previous?.clientId === clientId && previous.subject && previous.subject !== identity.sub) {
-    throw new Error("ChatGPT signed in a different account than this registration's. Sign out first to use another account.")
+  const expected = (previous?.clientId === clientId ? previous.subject : null) ?? pending.subject ?? null
+  if (expected && expected !== identity.sub) {
+    throw new Error("ChatGPT signed in a different account than this registration's. Use a different ChatGPT account first to change accounts.")
   }
   const record = recordOf(tokens, { clientId, identity, now: now() })
-  write(storage, PENDING_KEY, null)
-  saveRecord(record, storage)
+  // Under the refresh lock: a refresh another tab has under way must not write its tokens over these.
+  await exclusively(async () => {
+    write(storage, PENDING_KEY, null)
+    saveRecord(record, storage)
+  }, locks)
   return record
 }
 
@@ -355,7 +396,8 @@ function exclusively(fn, locks = globalThis.navigator?.locks) {
  * when OpenAI could not be reached (the tokens are kept).
  */
 export async function accessToken({ storage = globalThis.localStorage, fetchImpl = fetch, now = Date.now, freshMs = FRESH_MS, locks } = {}) {
-  const good = (record) => record?.accessToken && record.expiresAt - now() > freshMs && record.scopes?.includes(PLAN_SCOPE)
+  const usable = (record, left) => record?.accessToken && !refused.has(record.accessToken) && record.expiresAt - now() > left
+  const good = (record) => usable(record, freshMs) && record.scopes?.includes(PLAN_SCOPE)
   const first = readRecord(storage)
   if (good(first)) return first.accessToken
   if (!first) throw new SignInNeeded("Not signed in to ChatGPT.")
@@ -365,10 +407,10 @@ export async function accessToken({ storage = globalThis.localStorage, fetchImpl
     const record = readRecord(storage)
     if (good(record)) return record.accessToken
     // OpenAI may say a token is not to be renewed before a time; until then the one held serves.
-    if (record?.accessToken && record.expiresAt > now() && record.earliestRefreshAt && now() < record.earliestRefreshAt) return record.accessToken
+    if (usable(record, MIN_LEFT_MS) && record.earliestRefreshAt && now() < record.earliestRefreshAt) return record.accessToken
     if (!record?.refreshToken) {
       // An access token with less than `freshMs` left still works for now.
-      if (record?.accessToken && record.expiresAt > now()) return record.accessToken
+      if (usable(record, MIN_LEFT_MS)) return record.accessToken
       throw new SignInNeeded("The ChatGPT sign-in has run out. Sign in again.")
     }
     let response
@@ -383,6 +425,9 @@ export async function accessToken({ storage = globalThis.localStorage, fetchImpl
     }
     const tokens = await response.json().catch(() => ({}))
     if (response.ok && tokens.access_token) {
+      // Kept only if the sign-in it renewed is still the one stored: signed
+      // out, or signed in again, meanwhile, these tokens are not to come back.
+      if (readRecord(storage)?.refreshToken !== record.refreshToken) throw new SignInNeeded("The ChatGPT sign-in changed while it was being renewed.")
       saveRecord(recordOf(tokens, { clientId: record.clientId, identity: null, now: now(), previous: record }), storage)
       return tokens.access_token
     }
@@ -402,7 +447,13 @@ export async function accessToken({ storage = globalThis.localStorage, fetchImpl
  * Resolves whether OpenAI confirmed the revocation; if it did not, the
  * person can disconnect Patchwork in ChatGPT's settings.
  */
-export async function signOut({ storage = globalThis.localStorage, fetchImpl = fetch } = {}) {
+export async function signOut({ storage = globalThis.localStorage, fetchImpl = fetch, locks } = {}) {
+  // Under the refresh lock, so a refresh under way finishes first and its
+  // replacement token is the one revoked.
+  return exclusively(() => signOutNow({ storage, fetchImpl }), locks)
+}
+
+async function signOutNow({ storage, fetchImpl }) {
   const record = readRecord(storage)
   let confirmed = !record?.refreshToken
   if (record?.refreshToken) {
@@ -427,8 +478,8 @@ export async function signOut({ storage = globalThis.localStorage, fetchImpl = f
 }
 
 /** Forget this device's registration too, to sign in a different account. */
-export async function forget({ storage = globalThis.localStorage, fetchImpl = fetch } = {}) {
-  const out = await signOut({ storage, fetchImpl })
+export async function forget({ storage = globalThis.localStorage, fetchImpl = fetch, locks } = {}) {
+  const out = await signOut({ storage, fetchImpl, locks })
   write(storage, RECORD_KEY, null)
   changed()
   return out

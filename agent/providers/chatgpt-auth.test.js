@@ -91,6 +91,24 @@ describe("beginning a sign-in", () => {
     expect(later.params.get("state")).not.toBe(first.params.get("state"))
   })
 
+  it("asks for consent outright when this registration's sign-in did not grant plan use", async () => {
+    storage.setItem("patchwork-agent:chatgpt", JSON.stringify({ clientId: "oaiapp_made_up", idToken: "old.id.token", scopes: ["openid", "email"] }))
+    const { params } = await begun({ registration: { clientId: "oaiapp_made_up" } })
+    expect(params.get("prompt")).toBe("consent")
+    expect(params.get("scope")).toBe(ALL_SCOPES)
+    storage.setItem("patchwork-agent:chatgpt", JSON.stringify({ clientId: "oaiapp_made_up", scopes: ALL_SCOPES.split(" ") }))
+    storage.removeItem("patchwork-agent:chatgpt-pending")
+    expect((await begun({ registration: { clientId: "oaiapp_made_up" } })).params.get("prompt")).toBeNull()
+  })
+
+  it("is waiting from when the person opens it, however long ago the link was made", async () => {
+    const { pending } = await begun({ now: Date.now() - auth.PENDING_MS - 60_000 })
+    auth.opened(storage)
+    expect(auth.status(storage).pending).toBe(true)
+    const fetchImpl = tokenEndpoint({ nonce: pending.nonce })
+    await expect(auth.finish(`?code=c&state=${pending.state}&client_id=oaiapp_made_up`, { storage, fetchImpl })).resolves.toMatchObject({ clientId: "oaiapp_made_up" })
+  })
+
   it("is waiting only once the person has gone to ChatGPT with it", async () => {
     await begun()
     expect(auth.status(storage).pending).toBe(false)
@@ -142,6 +160,18 @@ describe("finishing it from the pasted address", () => {
   it("refuses a returning registration answered for another client", async () => {
     const { pending } = await begun({ registration: { clientId: "oaiapp_mine" } })
     await expect(auth.finish(`?code=c&state=${pending.state}&client_id=oaiapp_theirs`, { storage, fetchImpl: vi.fn() })).rejects.toThrow(/different registration/)
+  })
+
+  it("refuses a callback naming the registration entry point as its client", async () => {
+    const { pending } = await begun()
+    await expect(auth.finish(`?code=c&state=${pending.state}&client_id=dynamic_agent_client`, { storage, fetchImpl: vi.fn() })).rejects.toThrow(/entry point/)
+  })
+
+  it("on a second device, refuses an account other than the registration's", async () => {
+    const { pending } = await begun({ registration: { clientId: "oaiapp_made_up", subject: "user-1" } })
+    const fetchImpl = tokenEndpoint({ nonce: pending.nonce, sub: "user-2" })
+    await expect(auth.finish(`?code=c&state=${pending.state}`, { storage, fetchImpl })).rejects.toThrow(/different account/)
+    expect(auth.readRecord(storage)).toBeNull()
   })
 
   it("keeps nothing whose ID token is not this sign-in's", async () => {
@@ -233,10 +263,47 @@ describe("a token for a run", () => {
   })
 
   it("serves the token held until OpenAI's earliest renewal time", async () => {
-    signedIn({ expiresAt: Date.now() + 60_000, earliestRefreshAt: Date.now() + 30_000 })
+    // Five minutes left: short of fresh, but enough to hand out.
+    signedIn({ expiresAt: Date.now() + 5 * 60_000, earliestRefreshAt: Date.now() + 30_000 })
     const fetchImpl = vi.fn()
     expect(await auth.accessToken({ storage, fetchImpl })).toBe("access-0")
     expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it("renews instead of handing out again a token a run gave up, whatever the clock says of it", async () => {
+    signedIn({ accessToken: "access-given-up" })
+    auth.refuse("access-given-up")
+    const fetchImpl = refreshEndpoint()
+    expect(await auth.accessToken({ storage, fetchImpl, locks: null })).toBe("access-1")
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it("never hands out a token with less than two minutes left, even with nothing to renew it with", async () => {
+    signedIn({ refreshToken: null, expiresAt: Date.now() + 60_000 })
+    await expect(auth.accessToken({ storage, fetchImpl: vi.fn(), locks: null })).rejects.toBeInstanceOf(auth.SignInNeeded)
+  })
+
+  it("does not bring back a sign-in signed out while it was being renewed: the replacement is the one revoked", async () => {
+    signedIn({ expiresAt: Date.now() - 1 })
+    let answer
+    const revoked = []
+    const fetchImpl = vi.fn(async (url, init) => {
+      const form = new URLSearchParams(String(init.body))
+      if (String(url).endsWith("/revoke")) {
+        revoked.push(form.get("token"))
+        return new Response("", { status: 200 })
+      }
+      await new Promise((resolve) => (answer = resolve))
+      return json({ access_token: "access-1", refresh_token: "refresh-1", expires_in: 3600, scope: ALL_SCOPES })
+    })
+    const renewing = auth.accessToken({ storage, fetchImpl, locks: null })
+    await vi.waitFor(() => expect(answer).toBeTypeOf("function"))
+    const out = auth.signOut({ storage, fetchImpl, locks: null })
+    answer()
+    expect(await renewing).toBe("access-1")
+    await out
+    expect(revoked).toEqual(["refresh-1"])
+    expect(auth.status(storage).signedIn).toBe(false)
   })
 
   it("needs a sign-in when there is none", async () => {

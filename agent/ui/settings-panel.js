@@ -444,6 +444,14 @@ export function createSettingsPanel({ store, onKey = () => {}, onChange = () => 
     // The attempt is in this browser's storage, marked as gone to ChatGPT, so
     // the steps show until it is finished — after a reload too.
     chatgptAuth.opened()
+    // Gone meanwhile (finished or started over in another tab): a new link, and nothing opened.
+    if (!chatgptAuth.status().pending) {
+      event.preventDefault()
+      signInLink.removeAttribute("href")
+      chatgptError.textContent = "That sign-in had ended. Click Continue with ChatGPT again."
+      renderCredentials()
+      return
+    }
     setTimeout(() => {
       renderCredentials()
       pasteInput.focus()

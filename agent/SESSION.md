@@ -35,8 +35,7 @@ a `lease`; nothing reads it. There is no `status` field (*Status*).
 `streaming: { runner }` marks a reply still being written, naming its run, and
 is removed when the stream ends. It is written when the model first answers, after the last turn its
 request was built from: a request that never gets through writes none. A reply marked by a run that
-`burst` does not name was cut off: the next run takes it out and asks again. Every block has an `id`.
-`carry: { provider, data }` is what a provider asked to have back with a whole reply, `data` one frozen JSON string (`session/blocks.js` `carryOf`); only that provider reads it, and only while it matches the turn's text and calls.
+`burst` does not name was cut off: the next run takes it out and asks again. Every block has an `id`. `carry: { provider, data }` is what a provider asked to have back with a whole reply, `data` one frozen JSON string (`session/blocks.js` `carryOf`); only that provider reads it, and only while it matches the turn's text and calls.
 
 | block | fields | |
 |---|---|---|

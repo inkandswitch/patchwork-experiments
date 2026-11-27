@@ -238,6 +238,14 @@ export async function freshCredential(providerId, opts = {}) {
 }
 
 /**
+ * A run gave up the credential it was handed (it ended for a fresh token): it
+ * is not handed out again, so the next ask renews (chatgpt-auth.js refuse).
+ */
+export function refuseCredential(providerId, credential) {
+  if (signsIn(providerId)) chatgptAuth.refuse(credential?.token ?? credential)
+}
+
+/**
  * The account's ChatGPT registration: the client Patchwork was registered as
  * and for whom, kept in the account's settings so each device signs in to
  * it rather than registering Patchwork again. Not a secret: the tokens stay

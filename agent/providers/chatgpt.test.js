@@ -123,11 +123,13 @@ describe("the request", () => {
     expect(toInput("", [{ role: "tool", content: [{ type: "result", callId: "c", output: "x", image: "data:," }] }], { dropImages: true })).toEqual([{ type: "function_call_output", call_id: "c", output: "x" }])
   })
 
-  it("sends a turn's carry in its place, as it came less its status, when it is the turn the transcript holds", () => {
+  it("sends a turn's carry in its place, exactly as it came, when it is the turn the transcript holds", () => {
     const carry = { provider: "chatgpt", data: { items: [REASONING, COMMENTARY, CALL] } }
     const turn = { role: "assistant", carry, content: [{ type: "text", text: "Reading it." }, { type: "call", id: "call_a", name: "doc_read", input: { url: "automerge:made-up" } }] }
     const input = toInput("", [turn])
-    expect(input).toEqual([REASONING, { ...COMMENTARY, status: undefined }, { ...CALL, status: undefined }].map(({ status, ...rest }) => rest))
+    expect(input).toEqual([REASONING, COMMENTARY, CALL])
+    // Without a namespace for the tools, only the call's namespace goes.
+    expect(toInput("", [turn], { namespaced: false })[2]).toEqual((({ namespace, ...rest }) => rest)(CALL))
     expect(input[0].encrypted_content).toBe("gAAAA-sealed")
     expect(input[1].phase).toBe("commentary")
   })
@@ -198,6 +200,9 @@ describe("the reply", () => {
     )
     expect(events.map((e) => e.type)).toEqual(["usage", "stop"])
     expect(events.at(-1)).toEqual({ type: "stop", reason: "length" })
+    // Nor of one stopped for any other reason.
+    const filtered = await collect(decodeStream(chunks(sse({ type: "response.output_item.done", output_index: 0, item: REASONING }, { type: "response.incomplete", response: { incomplete_details: { reason: "content_filter" } } }))))
+    expect(filtered.map((e) => e.type)).toEqual(["stop"])
   })
 
   it("is an interruption when the body ends before the reply was finished", async () => {
@@ -224,12 +229,18 @@ describe("refusals", () => {
     expect(failure({ status: 400, code: "subscription_sharing_unsupported_capability", param: "tools[0]" }).message).toMatch(/`tools\[0\]`/)
   })
 
-  it("name a feature to drop only when it was sent and the refusal is about a parameter", () => {
-    const sent = new Set(["breakpoint", "summary"])
+  it("name a feature to drop only by the parameter it names, when it was sent and the refusal is about a parameter", () => {
+    const sent = new Set(["breakpoint", "summary", "namespace"])
     expect(droppable({ code: "subscription_sharing_unsupported_capability", param: "input[0].content[0].prompt_cache_breakpoint" }, sent)).toBe("breakpoint")
     expect(droppable({ code: "unsupported_parameter", param: "reasoning.summary", message: "" }, sent)).toBe("summary")
     expect(droppable({ code: "unsupported_parameter", param: "stream_options" }, sent)).toBeNull()
-    expect(droppable({ code: "subscription_sharing_usage_limit_exceeded", param: "prompt_cache_breakpoint" }, sent)).toBeNull()
+    expect(droppable({ code: "subscription_sharing_usage_limit_exceeded", param: "input[0].content[0].prompt_cache_breakpoint" }, sent)).toBeNull()
+    // Never by the wording: a replayed reasoning item's summary is not the request's.
+    expect(droppable({ code: "invalid_request_error", param: null, message: "reasoning.summary is not supported" }, sent)).toBeNull()
+    expect(droppable({ code: "invalid_request_error", param: "input[3].summary", message: "bad summary" }, sent)).toBeNull()
+    // The namespace only when namespaces are what is refused.
+    expect(droppable({ code: "invalid_request_error", param: "tools[0]", message: "too many tools" }, sent)).toBeNull()
+    expect(droppable({ code: "invalid_request_error", param: "tools[0].type", message: "namespace is not supported" }, sent)).toBe("namespace")
   })
 })
 

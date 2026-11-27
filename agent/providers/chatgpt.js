@@ -77,14 +77,14 @@ export const SUGGESTED_MODELS = [
  * shown, never what the request means.
  */
 export const OPTIONAL = {
-  breakpoint: /prompt_cache_breakpoint/,
-  cacheKey: /prompt_cache_key/,
-  streamOptions: /stream_options|include_obfuscation/,
-  include: /\binclude\b|encrypted_content/,
-  summary: /reasoning\.summary|\bsummary\b/,
-  namespace: /namespace/,
-  verbosity: /verbosity/,
-  mode: /reasoning\.mode/,
+  breakpoint: /\.prompt_cache_breakpoint$/,
+  cacheKey: /^prompt_cache_key$/,
+  streamOptions: /^stream_options(\.|$)/,
+  include: /^include(\[|$)/,
+  summary: /^reasoning\.summary$/,
+  namespace: /^tools(\[\d+\](\.type)?)?$/,
+  verbosity: /^text(\.verbosity)?$/,
+  mode: /^reasoning\.mode$/,
 }
 
 // ---------------------------------------------------------------- outbound
@@ -200,11 +200,17 @@ function functionCall(call, namespaced) {
   return item
 }
 
-/** A carried item as it goes back: as it came, less what only describes it in a response. */
+/**
+ * A carried item as it goes back: exactly as it came (OpenAI's own replay is
+ * `input += response.output`; a message item's `status` is required on input).
+ * Only a call's namespace goes when tools are sent without one.
+ */
 function replayItem(item, namespaced) {
-  const { status: _status, ...rest } = item
-  if (rest.type === "function_call" && !namespaced) delete rest.namespace
-  return rest
+  if (item.type === "function_call" && !namespaced && "namespace" in item) {
+    const { namespace: _namespace, ...rest } = item
+    return rest
+  }
+  return item
 }
 
 /** Neutral tool definitions -> one namespace of function tools (or the functions alone). */
@@ -309,11 +315,20 @@ export function failure({ status = null, code = null, param = null, message = ""
   return new ChatGPTError(`ChatGPT${status ? ` ${status}` : ""}${code ? ` (${code})` : ""}:${said ? ` ${said}` : " the request failed"}`, { code, param, status })
 }
 
-/** Which OPTIONAL feature a refusal names, if any. */
+/**
+ * Which OPTIONAL feature a refusal names, if any: by its `param` alone, the
+ * one field that names a part of the request exactly, never by its wording.
+ * The namespace is dropped only when the refusal says it is namespaces that
+ * are refused, since the route takes function tools only inside one.
+ */
 export function droppable({ code = null, param = null, message = "" } = {}, sent = new Set()) {
-  const said = `${param ?? ""} ${message ?? ""}`
+  if (typeof param !== "string" || !param) return null
   if (code && code !== "subscription_sharing_unsupported_capability" && !/unknown_parameter|unsupported_parameter|invalid_request|unsupported_value/.test(code)) return null
-  for (const [feature, names] of Object.entries(OPTIONAL)) if (sent.has(feature) && names.test(said)) return feature
+  for (const [feature, names] of Object.entries(OPTIONAL)) {
+    if (!sent.has(feature) || !names.test(param)) continue
+    if (feature === "namespace" && !/namespace/i.test(String(message ?? ""))) continue
+    return feature
+  }
   return null
 }
 
@@ -332,6 +347,7 @@ export async function* decodeStream(chunks) {
   let usage = null
   let stopReason = "end"
   let finished = false
+  let completed = false
   let summaryPart = null
 
   for await (const payload of sseEvents(chunks)) {
@@ -362,6 +378,7 @@ export async function* decodeStream(chunks) {
         break
       case "response.completed":
         finished = true
+        completed = true
         usage = event.response?.usage ?? null
         // Items the reply lists that no `done` event brought (it should not happen).
         for (const [i, item] of (event.response?.output ?? []).entries()) if (!done.has(i)) done.set(i, item)
@@ -403,7 +420,7 @@ export async function* decodeStream(chunks) {
   if (calls && stopReason === "end") stopReason = "tool_use"
 
   // Kept only from a reply that completed: an incomplete one is not sent back whole.
-  const carry = stopReason === "length" ? null : carryOf(items)
+  const carry = completed ? carryOf(items) : null
   if (carry) yield { type: "carry", data: carry }
 
   if (usage) {
