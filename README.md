@@ -90,3 +90,16 @@ localStorage.systemPackageListURL = "http://localhost:4455/modules.json";
 
 Deploys run via Netlify's Git integration (`netlify.toml`): production on the
 production branch, automatic Deploy Previews per PR.
+
+### PR previews
+
+Every PR gets a Patchwork to try it in, as in patchwork-pkg-base:
+`.github/workflows/preview.yml` waits for Netlify's deploy preview of this
+commit's tools bundle, builds the patchwork.inkandswitch.com shell with its
+published base packages plus **only the experiments the PR touches**, deploys it
+to `patchwork-preview-<PR>--<site>.netlify.app`, and comments the link on the
+PR. Closing the PR tears it down. PRs from forks don't get one (no secrets).
+
+It needs three repository secrets: `NETLIFY_AUTH_TOKEN`, `NETLIFY_SITE_ID` (the
+tools bundle's site — the shell is deployed to an alias on it) and
+`PATCHWORK_CROW_TOKEN` (comments as the crow).
