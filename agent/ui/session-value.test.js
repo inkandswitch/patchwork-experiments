@@ -22,11 +22,12 @@ const value = (doc, local = {}) => sessionValue(doc, { ...LOCAL, ...local })
 
 describe("the hint line", () => {
   // Facts under which no row applies, and for each row what makes it apply.
-  const NONE = { voice: null, version: "current", outdated: false, hasKey: true, work: null, poolHere: true, foreign: false, pageTool: null, claimed: null, parked: null, asking: 0, pending: 0, status: STATUS.idle, reason: null, failed: null }
+  const NONE = { voice: null, version: "current", outdated: false, hasKey: true, tasks: true, work: null, poolHere: true, foreign: false, pageTool: null, claimed: null, parked: null, asking: 0, pending: 0, status: STATUS.idle, reason: null, failed: null }
   const ROWS = [
     ["voice", { voice: "Listening…" }, "Listening…"],
     ["earlier", { version: "earlier" }, "This session is from an earlier version of the agent and does not run. Start a new one to carry on."],
     ["outdated", { outdated: true }, "Waiting for a newer version of the agent: something in this session needs it"],
+    ["no-tasks", { tasks: false }, "This needs the Tasks package, which is not installed here."],
     ["no-key-elsewhere", { hasKey: false, work: "elsewhere" }, "Working on another device — this browser has no API key"],
     ["no-key", { hasKey: false }, "Add an API key to start"],
     ["asking", { asking: 1 }, "Waiting on your answer"],
@@ -37,7 +38,7 @@ describe("the hint line", () => {
     ["reconnecting", { status: STATUS.reconnecting, reason: "offline" }, "Waiting for the network; carries on when it is back (offline)"],
     ["here", { work: "here" }, "Working on this browser… Enter to steer, Stop to interrupt"],
     ["elsewhere", { work: "elsewhere" }, "Working on another device… Enter to steer, Stop to interrupt"],
-    ["waiting-elsewhere", { work: "waiting", poolHere: false }, "Waiting for another of your devices to take it: the tasks package is not installed in this browser"],
+    ["waiting-elsewhere", { work: "waiting", poolHere: false }, "Waiting for another of your devices to take it: this browser is not taking work"],
     ["waiting", { work: "waiting" }, "Waiting for a device to take it"],
     ["failed", { failed: "Invalid AutomergeUrl: 'a document'." }, "The work could not be asked for: Invalid AutomergeUrl: 'a document'. Asks again on the next change, or when the network is back"],
     ["parked", { status: STATUS.parked, parked: "view_mount" }, "Waiting for an open page to run view_mount"],
@@ -69,7 +70,7 @@ describe("the hint line", () => {
           exclusive.push(`${first.name}+${second.name}`)
           continue
         }
-        const expected = first.name === "no-key" && second.name === "elsewhere" ? ROWS[3][2] : ROWS[i][2]
+        const expected = first.name === "no-key" && second.name === "elsewhere" ? ROWS[4][2] : ROWS[i][2]
         expect([first.name, second.name, hintOf(facts)]).toEqual([first.name, second.name, expected])
       }
     }
@@ -112,6 +113,7 @@ describe("the hint line", () => {
       version: "current",
       outdated: true,
       hasKey: false,
+      tasks: true,
       work: "elsewhere",
       poolHere: true,
       foreign: false,
@@ -131,7 +133,7 @@ describe("the hint line", () => {
     const waiting = { state: "waiting", runs: [] }
     expect(value(doc, { work: waiting }).hint).toBe("Waiting for a device to take it")
     expect(value(doc, { work: waiting, poolHere: true }).hint).toBe("Waiting for a device to take it")
-    expect(value(doc, { work: waiting, poolHere: false }).hint).toBe("Waiting for another of your devices to take it: the tasks package is not installed in this browser")
+    expect(value(doc, { work: waiting, poolHere: false }).hint).toBe("Waiting for another of your devices to take it: this browser is not taking work")
     // Taken by a pool, it says where, as anywhere.
     expect(value(doc, { work: { state: "running", runs: [{ id: "r1", pool: "pool-b", start: 1 }] }, poolHere: false }).hint).toMatch(/^Working on another device/)
   })

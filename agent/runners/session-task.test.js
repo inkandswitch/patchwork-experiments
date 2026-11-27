@@ -1,6 +1,8 @@
 /**
  * The session task (runners/session-task.js): one burst built from a task's
  * input, run on an in-memory Repo with the provider's requests answered here.
+ * The task client its pool's registry gives is a stand-in whose rules read
+ * runs and stops as the test says; the probes run it with the real one.
  */
 import { describe, it, expect, afterEach, vi } from "vitest"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
@@ -9,9 +11,14 @@ import { initSession, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { noteWrite } from "../knowledge/notes.js"
 import { SYNC_SERVERS } from "../net/guard.js"
+import { _holdClient } from "../host/import.js"
+import { standIn } from "../fixtures/task-client.js"
 import sessionTask, { runFetch, rebased, runsOfTask } from "./session-task.js"
 
 await initSubduction()
+
+// A stop is what the client's isStop says it is: here, a record whose id says so.
+_holdClient(standIn({ recordsOf: (task) => task?.runs ?? [], isStop: (record) => record.id.startsWith("stop-") }))
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -107,7 +114,7 @@ describe("the session task", () => {
     expect(foreign.session.doc().burst).toEqual({ run: "run-elsewhere" })
   })
 
-  it("a stop in the task's document is no run", async () => {
+  it("a stop in the task's document, as the client's rules tell it, is no run", async () => {
     const { repo, task } = await world()
     task.change((d) => d.runs.push({ id: "stop-1", status: "cancelled", start: 2, end: 2 }))
     expect(await runsOfTask(repo, task.url)).toEqual(["run-1"])

@@ -9,7 +9,7 @@
 // stand-in (probes/stand-in-provider.mjs) on this machine, reached through the
 // task input's `providerUrl`, with a made-up key. This process is the asker:
 // a Repo of its own makes the account's root folder with a note in it and
-// each session, and asks a burst with the kit client's run(), as a page's
+// each session, and asks a burst with the tasks client's run(), as a page's
 // askWork would, under `agent:<session>`, the input in askWork's order.
 //
 // Checks, one line each, with what was seen:
@@ -26,10 +26,9 @@ import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Repo, initSubduction, stringifyAutomergeUrl } from "@automerge/automerge-repo";
 import * as A from "@automerge/automerge";
-import { run } from "../host/task-client.js";
 import { initSession } from "../session/schema.js";
 import { makeTurn, textBlock } from "../session/blocks.js";
 import { stopSession } from "../session/recovery.js";
@@ -41,6 +40,8 @@ import { standIn } from "./stand-in-provider.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const AGENT = join(HERE, "..");
 const HOST = join(AGENT, "../tasks/dist-node/host.mjs");
+// The tasks package's Node build of its client: a probe is no pool, and has no registry.
+const { run } = await import(pathToFileURL(join(dirname(HOST), "task-client.mjs")).href);
 const arg = (n, d = null) => {
   const i = process.argv.indexOf(n);
   return i > 0 ? process.argv[i + 1] : d;

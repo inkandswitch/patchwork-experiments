@@ -21,6 +21,7 @@ import { askWork, forget } from "../runners/ask.js"
 import { ensureDriver, getDriver, letGo, sessionHolder, _resetDrivers } from "../workflow/driver.js"
 import { initPlan, beginStep, changePlan, finishStep, settlePlan, reopenSteps, runAgain, PLAN } from "../workflow/plan.js"
 import { WorkflowView } from "./workflow-view.js"
+import { standIn } from "../fixtures/task-client.js"
 
 await initSubduction()
 
@@ -267,7 +268,7 @@ describe("a session that can never be found", () => {
       stopWork: async () => false,
       ownQueue: async () => QUEUE,
     }
-    await askWork(repo, url, { client, onOnline: () => () => {} }).catch(() => {})
+    await askWork(repo, url, { client: standIn(client), onOnline: () => () => {} }).catch(() => {})
     await vi.advanceTimersByTimeAsync(60_000)
     expect(finds).toBe(1)
     expect(client.doWork).not.toHaveBeenCalled()
@@ -293,7 +294,7 @@ describe("a session that can never be found", () => {
       stopWork: async () => false,
       ownQueue: async () => QUEUE,
     }
-    await askWork(repo, handle.url, { client, onOnline: () => () => {} }).catch(() => {})
+    await askWork(repo, handle.url, { client: standIn(client), onOnline: () => () => {} }).catch(() => {})
     await vi.advanceTimersByTimeAsync(60_000)
     expect(client.doWork).toHaveBeenCalledTimes(1)
     expect(finds).toBe(1)
@@ -310,7 +311,7 @@ describe("a failure whose words hold a web address, a file url and a document ur
       watchWork: () => () => {},
       stopWork: async () => false,
     }
-    _reset(askWork, { with: client })
+    _reset(askWork, { with: standIn(client) })
     const repo = new Repo({ network: [] })
     const handle = sessionIn(repo, [makeTurn("user", [textBlock("hello")])])
     used.push(handle.url)

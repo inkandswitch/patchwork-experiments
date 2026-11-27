@@ -13,6 +13,7 @@ import { makeTurn, textBlock } from "../session/blocks.js"
 import { askWork, forget, failedAskOf } from "../runners/ask.js"
 import { askFor, followWorkFor, _reset } from "../runners/page.js"
 import { sessionValue } from "./session-value.js"
+import { standIn as taskClientOf } from "../fixtures/task-client.js"
 
 await initSubduction()
 
@@ -71,7 +72,7 @@ beforeEach(() => {
   localStorage.clear()
   localStorage.setItem(KEY, "sk-made-up")
   client = standIn()
-  _reset(askWork, { with: client })
+  _reset(askWork, { with: taskClientOf(client) })
 })
 afterEach(() => {
   for (const url of used) forget(url)
@@ -153,7 +154,7 @@ describe("what the words leave in", () => {
   // server). It is taken out as a document url is (ask.js withoutUrls).
   it("a web address in the failure is not said under the composer", async () => {
     client = standIn({ why: "fetch failed: https://relay.example.invalid/v1/connect" })
-    _reset(askWork, { with: client })
+    _reset(askWork, { with: taskClientOf(client) })
     const { repo, handle, told } = followed()
     client.failing(1)
     await askFor(repo, handle.url)

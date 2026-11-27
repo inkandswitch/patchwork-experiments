@@ -26,6 +26,7 @@ import { asInterruption } from "../net/network.js"
 import { askWork } from "../runners/ask.js"
 import { _reset, askFor, stopFor, takeOverFor, retireEarlier } from "../runners/page.js"
 import { handleStore } from "../kernel/store.js"
+import { standIn } from "../fixtures/task-client.js"
 
 const handleStoreOf = (handle) => handleStore(handle, A.splice)
 
@@ -192,7 +193,7 @@ afterEach(async () => {
 /** The page asks with the real askWork and this pool's client. */
 function wire(repo, provider, opts = {}) {
   pool = makePool({ repo, provider, ...opts })
-  _reset(askWork, { with: pool.client })
+  _reset(askWork, { with: standIn(pool.client) })
   return pool
 }
 
@@ -615,7 +616,7 @@ describe("two people, two copies that merge only when the test says", () => {
     const handleB = repoB.import(A.save(handleA.doc()), { docId: handleA.documentId })
     const providerB = makeMock([[{ type: "text", delta: "B's reply" }]])
     const poolB = makePool({ repo: repoB, provider: () => providerB, poolId: "pool-b" })
-    B.page._reset(B.ask.askWork, { with: poolB.client })
+    B.page._reset(B.ask.askWork, { with: standIn(poolB.client) })
     const elementB = document.createElement("div")
     document.body.append(elementB)
     const cleanupB = B.AgentTool(handleB, elementB, { repo: repoB })
@@ -659,7 +660,7 @@ describe("two people, two copies that merge only when the test says", () => {
     const handleB = repoB.import(A.save(handleA.doc()), { docId: handleA.documentId })
     const providerB = makeMock([[{ type: "text", delta: "from B" }], ...Array.from({ length: 20 }, (_, i) => [{ type: "text", delta: `B again ${i}` }])], { delayMs: 20 })
     const poolB = makePool({ repo: repoB, provider: () => providerB, poolId: "pool-b" })
-    B.page._reset(B.ask.askWork, { with: poolB.client })
+    B.page._reset(B.ask.askWork, { with: standIn(poolB.client) })
     const elementB = document.createElement("div")
     document.body.append(elementB)
     const cleanupB = B.AgentTool(handleB, elementB, { repo: repoB })

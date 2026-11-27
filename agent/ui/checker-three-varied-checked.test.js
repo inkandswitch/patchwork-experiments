@@ -21,6 +21,7 @@ import { getDriver, letGo, _resetDrivers } from "../workflow/driver.js"
 import { initPlan, beginStep, changePlan, finishStep, settlePlan, PLAN } from "../workflow/plan.js"
 import { workflowReopen, workflowStop } from "../workflow/tools.js"
 import { WorkflowView } from "./workflow-view.js"
+import { standIn } from "../fixtures/task-client.js"
 
 await initSubduction()
 
@@ -176,7 +177,7 @@ describe("a failure whose words hold document urls with heads", () => {
       watchWork: () => () => {},
       stopWork: async () => false,
     }
-    _reset(askWork, { with: client })
+    _reset(askWork, { with: standIn(client) })
     const repo = new Repo({ network: [] })
     const handle = sessionIn(repo, [makeTurn("user", [textBlock("hello")])])
     used.push(handle.url)

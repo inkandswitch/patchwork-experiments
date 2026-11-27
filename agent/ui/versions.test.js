@@ -15,7 +15,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { burstRunner } from "../fixtures/burst.js"
 import { retireEarlier, CODE_VERSION, _reset } from "../runners/page.js"
-import { askWork, SESSION_TASK, forget } from "../runners/ask.js"
+import { askWork, forget } from "../runners/ask.js"
 import { memoryStore } from "../kernel/store.js"
 import { makeMock } from "../fixtures/mock-provider.js"
 import { initSession, unknownBlocks, BLOCK_TYPES, _resetIds } from "../session/schema.js"
@@ -74,10 +74,13 @@ describe("a burst meets something it cannot read", () => {
 describe("a burst runs the version its asker runs", () => {
   it("what is asked for is the module the asking page loaded, unless the asker names another", async () => {
     const asked = []
+    const named = []
     const client = {
       doWork: async (_repo, request) => (asked.push(request.importUrl), { outcome: "idle" }),
       watchWork: () => () => {},
       stopWork: async () => false,
+      // The task client's: a file beside the asker, in its package at its heads.
+      inSamePackage: (from, path) => (named.push([from, path]), `automerge:this-build/${path}`),
     }
     const doc = {}
     initSession(doc, {})
@@ -88,7 +91,8 @@ describe("a burst runs the version its asker runs", () => {
     await askWork(repo, "automerge:versions-b", { client, importUrl: "automerge:other-build/runners/session-task.js" })
     forget("automerge:versions-a")
     forget("automerge:versions-b")
-    expect(asked).toEqual([SESSION_TASK, "automerge:other-build/runners/session-task.js"])
+    expect(asked).toEqual(["automerge:this-build/runners/session-task.js", "automerge:other-build/runners/session-task.js"])
+    expect(named).toEqual([[expect.stringMatching(/\/runners\/ask\.js$/), "runners/session-task.js"]])
   })
 })
 

@@ -1,6 +1,7 @@
 // A session's work asked from a page that does NOT hold its browser's pool,
 // with no network: the agent's own asker (runners/ask.js askWork, with the
-// real kit client host/task-client.js) in a second tab of the profile, the
+// task client the page's registry gives, host/import.js, the Tasks package
+// registered there from its built entry) in a second tab of the profile, the
 // pool held by the first. The tasks package's stand-in page as
 // probes/session-task-browser.mjs serves it, with `?site` pages (a site Repo
 // of each tab's own, the two joined only by one database and one heads
@@ -24,7 +25,7 @@
 //     urls, is not asked again by itself, and is asked once more (only) when
 //     the network comes back
 //   5 a page whose pool host arrives late: poolHere() false and the line says
-//     the tasks package is not installed; when the host registers,
+//     this browser is not taking work; when the host registers,
 //     hostsChanged (made with ??=, as the agent's view makes it) fires,
 //     poolHere() is true, and the line is the plain waiting one
 //
@@ -96,13 +97,16 @@ const vendor = {
   "automerge-subduction-slim": "@automerge/automerge-subduction/slim",
   "solid-js": "solid-js",
   "solid-js-web": "solid-js/web",
+  "patchwork-plugins": "@inkandswitch/patchwork-plugins",
+  "patchwork-filesystem": "@inkandswitch/patchwork-filesystem",
 };
 const entryPoints = {};
 for (const [name, spec] of Object.entries(vendor)) {
   writeFileSync(join(stubs, `${name}.js`), `export * from ${J(spec)};\n`);
   entryPoints[name] = join(stubs, `${name}.js`);
 }
-entryPoints["task-client"] = join(AGENT, "host/task-client.js");
+// The stand-in page's own client, as browser-run.mjs builds it.
+entryPoints["task-client"] = join(TASKS, "src/task-client.js");
 await build({
   entryPoints,
   outdir: join(root, "vendor"),
@@ -240,15 +244,19 @@ async function tab(path, browserContextId) {
   return { js, waitFor, liveWorkers, sessionId };
 }
 
-// In a page: the agent's asker with the real client, counting its doWork calls.
+// In a page: the Tasks package installed in its registry, from its built
+// entry; the agent's asker with the client the registry gives it, counting its
+// doWork calls.
 const ASKER = `(async () => {
   if (window.asker) return true;
   performance.setResourceTimingBufferSize(10000);
+  const { registerPlugins } = await import('@inkandswitch/patchwork-plugins');
+  registerPlugins((await import('/dist/index.js')).plugins, location.origin + '/dist/index.js');
   const ask = await import('/agent/runners/ask.js');
   const value = await import('/agent/ui/session-value.js');
-  const client = await import('/agent/host/task-client.js');
+  const client = await (await import('/agent/host/import.js')).taskClient();
   const calls = [];
-  const counted = { ...ask.TASK_CLIENT, doWork: (...args) => (calls.push(performance.now()), ask.TASK_CLIENT.doWork(...args)) };
+  const counted = { ...client, doWork: (...args) => (calls.push(performance.now()), client.doWork(...args)) };
   window.asker = { ask, value, client, calls, counted };
   return true;
 })()`;
@@ -388,8 +396,8 @@ try {
     );
     check(
       5,
-      "a pool host arriving late: before it, poolHere() false and the line says the tasks package is not installed; it fires hostsChanged on the object the view makes with ??=, and then poolHere() is true and the line is the plain waiting one",
-      late.before.here === false && /not installed/.test(late.before.line) && late.after.heard >= 1 && late.after.here === true && late.after.line === "Waiting for a device to take it",
+      "a pool host arriving late: before it, poolHere() false and the line says this browser is not taking work; it fires hostsChanged on the object the view makes with ??=, and then poolHere() is true and the line is the plain waiting one",
+      late.before.here === false && /not taking work/.test(late.before.line) && late.after.heard >= 1 && late.after.here === true && late.after.line === "Waiting for a device to take it",
       J(late),
     );
     await send("Target.disposeBrowserContext", { browserContextId }).catch(() => {});

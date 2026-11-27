@@ -11,7 +11,6 @@ import { STOP, stopOf } from "../session/status.js"
 import { isOwn } from "../kernel/own-changes.js"
 import { HEADS_WAIT_MS } from "../kernel/burst.js"
 import { askWork, takeOver, stop, forget, workKey, followWork, failedAskOf, CANCELLED } from "./ask.js"
-import { doWork } from "../host/task-client.js"
 
 await initSubduction()
 
@@ -278,12 +277,6 @@ describe("askWork", () => {
 // Seen live: after a Stop, the next message first said "The work could not be
 // asked for: The task was cancelled. …" before it worked.
 describe("a task that ended cancelled is not an ask that failed", () => {
-  it("the task client's own cancellation is the one this package knows", async () => {
-    const repo = new Repo({ network: [] })
-    const err = await doWork(repo, { importUrl: IMPORT, key: "agent:automerge:made-up", input: {} }, { signal: AbortSignal.abort() }).catch((e) => e)
-    expect(err.message).toBe(CANCELLED)
-  })
-
   it("Stop while the ask waits: nothing is said, and the next message asks as any message does", async () => {
     const repo = new Repo({ network: [] })
     const h = session(repo)

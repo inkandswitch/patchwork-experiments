@@ -36,10 +36,9 @@ import { createServer } from "node:http";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Repo, initSubduction, stringifyAutomergeUrl } from "@automerge/automerge-repo";
 import * as A from "@automerge/automerge";
-import { run, watch, cancel, findWhenThere } from "../host/task-client.js";
 import { initSession } from "../session/schema.js";
 import { makeTurn, textBlock } from "../session/blocks.js";
 import { stopSession } from "../session/recovery.js";
@@ -50,6 +49,8 @@ import { workKey, askWork, forget } from "../runners/ask.js";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const AGENT = join(HERE, "..");
 const HOST = join(AGENT, "../tasks/dist-node/host.mjs");
+// The tasks package's Node build of its client: a probe is no pool, and has no registry.
+const { run, watch, cancel, findWhenThere } = await import(pathToFileURL(join(dirname(HOST), "task-client.mjs")).href);
 const arg = (n, d = null) => {
   const i = process.argv.indexOf(n);
   return i > 0 ? process.argv[i + 1] : d;

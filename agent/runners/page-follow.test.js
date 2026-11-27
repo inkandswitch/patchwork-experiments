@@ -15,6 +15,7 @@ import { follow, askFor, takeOverFor, stopFor, followWorkFor, drivePlanHere, let
 import { forget, workKey } from "./ask.js"
 import { getDriver, sessionHolder, _resetDrivers } from "../workflow/driver.js"
 import { initPlan, beginStep, cancelStep, changePlan, STEP } from "../workflow/plan.js"
+import { standIn } from "../fixtures/task-client.js"
 
 await initSubduction()
 
@@ -25,7 +26,7 @@ let client
 beforeEach(() => {
   _resetIds()
   asks = []
-  client = { doWork: async () => ({ outcome: "idle" }), watchWork: () => () => {}, stopWork: vi.fn(async () => true) }
+  client = standIn({ stopWork: vi.fn(async () => true) })
   _reset(async (_repo, url, opts) => (asks.push({ url, opts }), { asked: true, outcome: "idle" }), { with: client })
   localStorage.clear()
   localStorage.setItem(KEY, "sk-test")
@@ -74,7 +75,6 @@ describe("asking", () => {
     expect(opts.keys).toEqual({ model: "sk-test", search: "brave-test", relay: null })
     expect(opts.account).toEqual({ rootFolderUrl: null, sensitiveDocs: [] })
     expect(opts.catalogue).toEqual({ tools: [], skills: [] })
-    expect(opts.client).toBe(client)
     await opts.reask()
     expect(asks).toHaveLength(2)
   })
@@ -93,10 +93,21 @@ describe("asking", () => {
   it("an asker that throws is said, never thrown", async () => {
     const repo = new Repo({ network: [] })
     const handle = sessionIn(repo)
-    _reset(async () => {
-      throw new Error("The tasks package is not installed")
-    })
-    expect(await askFor(repo, handle.url)).toMatchObject({ asked: false, error: true, why: "The tasks package is not installed" })
+    _reset(
+      async () => {
+        throw new Error("no queue could be had")
+      },
+      { with: client }
+    )
+    expect(await askFor(repo, handle.url)).toMatchObject({ asked: false, error: true, why: "no queue could be had" })
+  })
+
+  it("without the task client asks nothing, and says why", async () => {
+    const repo = new Repo({ network: [] })
+    const handle = sessionIn(repo)
+    _reset(async (_repo, url) => (asks.push({ url }), { asked: true }))
+    expect(await askFor(repo, handle.url)).toEqual({ asked: false, why: "no Tasks package" })
+    expect(asks).toEqual([])
   })
 })
 

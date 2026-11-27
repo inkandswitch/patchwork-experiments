@@ -4,13 +4,13 @@
  * asks (runners/page.js askFor, which fills in the input); a page showing or
  * driving the session also asks whenever its copy shows work.
  *
- * The task client is the task system's (host/task-client.js, a kit copy):
- * `doWork(repo, request)`, `watchWork(repo, key, onChange)`, `stopWork(repo,
- * key)`, `ownQueue(repo)` for the queue whose url goes in the input's
- * `sensitiveDocs`. A caller may hand in another as `client` (the tests'
- * stand-ins). What is asked for is this package's own runners/session-task.js,
- * at the version the asker loaded (`inSamePackage`), unless `importUrl` names
- * another.
+ * The task client is the Tasks package's, from the registry (host/import.js
+ * `taskClient`): `doWork(repo, request)`, `watchWork(repo, key, onChange)`,
+ * `stopWork(repo, key)`, `ownQueue(repo)` for the queue whose url goes in the
+ * input's `sensitiveDocs`. A caller may hand in another as `client` (the
+ * tests' stand-ins). What is asked for is this package's own
+ * runners/session-task.js, at the version the asker loaded (the client's
+ * `inSamePackage`), unless `importUrl` names another.
  *
  * The one rule (`shouldAsk`). askWork asks iff all of these hold:
  *   - the copy needs work a run can do: needsWork, its debris judged against
@@ -63,15 +63,9 @@ import { STOP } from "../session/status.js"
 import { WHERE } from "../session/schema.js"
 import { onOnline } from "../net/network.js"
 import { Automerge, AutomergeRepo } from "../host/modules.js"
-import { doWork, watchWork, stopWork, ownQueue, inSamePackage } from "../host/task-client.js"
+import { clientHere } from "../host/import.js"
 
-/** The task system's own client, which asks the person's own queue. */
-export const TASK_CLIENT = Object.freeze({ doWork, watchWork, stopWork, ownQueue })
-
-/** The asker's own loaded session task, in its package and at its heads; null outside a package (tests). */
-export const SESSION_TASK = inSamePackage(import.meta.url, "runners/session-task.js")
-
-const clientOf = (opts) => opts?.client ?? TASK_CLIENT
+const clientOf = (opts) => opts?.client ?? clientHere()
 
 /** The most asks at one copy's heads. */
 export const MAX_ASKS = 2
@@ -83,7 +77,7 @@ export { workKey }
 
 const FINISHED = new Set(["succeeded", "failed", "cancelled"])
 
-/** What the task client's doWork rejects with when the task it waits on ended cancelled (host/task-client.js). */
+/** What the task client's doWork rejects with when the task it waits on ended cancelled. */
 export const CANCELLED = "The task was cancelled"
 
 /** Did the task this ask waited on end cancelled? */
@@ -125,8 +119,8 @@ const sessions = new Map() // bare url -> entry
  * @param {object} repo  the page's Repo
  * @param {string} sessionUrl
  * @param {object} opts
- * @param {{ doWork: Function, watchWork: Function, stopWork: Function, ownQueue?: Function }} [opts.client]  default TASK_CLIENT
- * @param {string} [opts.importUrl]  default SESSION_TASK, the asker's loaded module: a burst runs the version the asker runs
+ * @param {{ doWork: Function, watchWork: Function, stopWork: Function, ownQueue?: Function, inSamePackage: Function }} [opts.client]  default the task client
+ * @param {string} [opts.importUrl]  default the asker's loaded session task, in its package and at its heads: a burst runs the version the asker runs
  * @param {{ rootFolderUrl: string|null, sensitiveDocs: string[] }} [opts.account]
  * @param {{ tools: object[], skills: object[] }} [opts.catalogue]
  * @param {{ model: string|null, search: string|null, relay: object|null }} [opts.keys]
@@ -168,7 +162,8 @@ export async function askWork(repo, sessionUrl, opts = {}) {
       catalogue: opts.catalogue ?? { tools: [], skills: [] },
       keys: opts.keys ?? { model: null, search: null, relay: null },
     }
-    const result = await client.doWork(repo, { importUrl: opts.importUrl ?? SESSION_TASK, key: workKey(sessionUrl), input })
+    const importUrl = opts.importUrl ?? client.inSamePackage(import.meta.url, "runners/session-task.js")
+    const result = await client.doWork(repo, { importUrl, key: workKey(sessionUrl), input })
     return { asked: true, outcome: result?.outcome ?? null }
   } catch (err) {
     // Stopped, not failed: nothing to say.
@@ -203,9 +198,9 @@ export async function takeOver(repo, sessionUrl, opts = {}) {
  * A person's Stop: the notice written into the session, which holds wherever
  * it runs, then the task under the key stopped on the stopper's own queue,
  * which only makes it quicker. Resolves what stopWork says (false when there
- * was nothing of theirs to stop).
+ * was nothing of theirs to stop, or no task client here).
  */
-export async function stop(repo, sessionUrl, { client = TASK_CLIENT, author = null } = {}) {
+export async function stop(repo, sessionUrl, { client = clientHere(), author = null } = {}) {
   const handle = await repo.find(bare(sessionUrl))
   handle.change((d) => stopSession(d, STOP.stopped, null, author))
   return Promise.resolve()

@@ -4,7 +4,9 @@
  * a page asks for it, follows it, and runs the calls only a page can run.
  *
  *   follow(handle, { repo, element })  the one place a page keeps a session
- *       going: it asks for the session's work whenever its copy shows some
+ *       going, from when the page has the task client (host/import.js
+ *       `taskClient`; nothing until the Tasks package is installed here):
+ *       it asks for the session's work whenever its copy shows some
  *       (askFor), runs its parked calls (pageCalls), owns its events and
  *       opens its watches (restoreWatches, again whenever `watches` changes),
  *       and is told the hashes a run reports as its own (runners/ask.js).
@@ -73,12 +75,12 @@ import { ensureDriver, getDriver, letGo, sessionHolder } from "../workflow/drive
 import { readKey, readRelay, SEARCH_KEY_ID } from "../providers/keys.js"
 import { relayFetch } from "../net/relay.js"
 import { guardedFetch, SYNC_SERVERS, pageOriginFetch } from "../net/guard.js"
-import { hostImport } from "../host/import.js"
+import { hostImport, taskClient, clientHere, _holdClient } from "../host/import.js"
 import { getMount } from "../tools/checking.js"
 import { braveSearch } from "../tools/web.js"
 import { restoreWatches } from "../tools/watch.js"
 import { packageOfPlugin } from "../knowledge/guides.js"
-import { askWork, forget, followWork, stop, TASK_CLIENT } from "./ask.js"
+import { askWork, forget, followWork, stop } from "./ask.js"
 
 /** Which build of this code made a follower: its module url, which changes with every version Patchwork loads. */
 export const CODE_VERSION = import.meta.url
@@ -228,13 +230,12 @@ const outdated = (doc) => unknownBlocks(doc).length > 0 || versionStanding(doc) 
 
 /** How this page asks: runners/ask.js askWork, unless a test hands in another (`_reset`). */
 let asker = askWork
-/** The task client this page follows and stops work with: the task system's, unless a test hands in another. */
-let client = TASK_CLIENT
 
 /**
  * Ask for a session's work, if askWork's rule says to, with what this page
  * puts in the input: the person's keys, the account context, and the
- * catalogue of installed packages' tools and skills. Nothing is asked for a
+ * catalogue of installed packages' tools and skills. Nothing is asked
+ * without the task client (the Tasks package not installed here), for a
  * session with no model key here ("Add an API key to start"), or of another
  * version. Resolves as askWork does; never throws.
  *
@@ -244,6 +245,7 @@ let client = TASK_CLIENT
  */
 export async function askFor(repo, sessionUrl, opts = {}) {
   try {
+    if (!clientHere()) return { asked: false, why: "no Tasks package" }
     const doc = (await repo.find(bare(sessionUrl))).doc()
     if (!doc) return { asked: false, why: "no session" }
     if (outdated(doc)) return { asked: false, why: "another version's session" }
@@ -254,7 +256,6 @@ export async function askFor(repo, sessionUrl, opts = {}) {
     const catalogue = await pluginCatalogue().catch(() => ({ tools: [], skills: [] }))
     return await asker(repo, sessionUrl, {
       ...opts,
-      client,
       // When the task it follows ends, or the network is back, it asks again this way: with the keys.
       reask: () => askFor(repo, sessionUrl),
       account: accountContext(),
@@ -266,14 +267,14 @@ export async function askFor(repo, sessionUrl, opts = {}) {
   }
 }
 
-/** Follow what the queue says of a session's task (runners/ask.js followWork). Returns how to stop. */
+/** Follow what the queue says of a session's task (runners/ask.js followWork), once this page has the task client. Returns how to stop. */
 export function followWorkFor(repo, sessionUrl, onView) {
-  return followWork(repo, sessionUrl, onView, { client, reask: () => askFor(repo, sessionUrl) })
+  return followWork(repo, sessionUrl, onView, { reask: () => askFor(repo, sessionUrl) })
 }
 
 /** A person's Stop: the notice written into the session, then its task stopped on their queue (runners/ask.js stop). */
 export function stopFor(repo, sessionUrl, { author = null } = {}) {
-  return stop(repo, sessionUrl, { client, author })
+  return stop(repo, sessionUrl, { author })
 }
 
 /**
@@ -361,19 +362,16 @@ export function follow(handle, { repo, element = null, channel = false } = {}) {
 /** The followers this page keeps, by session url. Tests. */
 export const _followers = () => followers
 
-/** A task client that hears nothing and stops nothing: what a test follows work with unless it says. */
-const QUIET_CLIENT = Object.freeze({ doWork: async () => ({ outcome: "idle" }), watchWork: () => () => {}, stopWork: async () => false })
-
 /**
  * Tests: let go of every follower, and from now on ask with `ask` (default:
- * ask nothing, and say so) and follow and stop work with `with` (default: a
- * client that hears and stops nothing).
+ * ask nothing, and say so) and hold `with` as the task client (default:
+ * none, so nothing is followed).
  */
-export function _reset(ask = async () => ({ asked: false, why: "a test asks nothing" }), { with: withClient = QUIET_CLIENT } = {}) {
+export function _reset(ask = async () => ({ asked: false, why: "a test asks nothing" }), { with: withClient = null } = {}) {
   for (const entry of followers.values()) entry.dispose()
   followers.clear()
   asker = ask
-  client = withClient
+  _holdClient(withClient)
 }
 
 function startFollowing(handle, repo) {
@@ -410,27 +408,36 @@ function startFollowing(handle, repo) {
       } catch {}
     }
   }
-  const contextReady = pageContext(handle, { repo, events, view }).then((context) => {
-    if (entry.disposed) return
-    calls = pageCalls(handle, {
-      context,
-      builtins: AGENT.builtins,
-      plugins: () => loadPluginTools(),
-      afterCall: AGENT.afterCall,
-      startSession: askOnly(repo),
-      followSession: followFor(repo),
-      ask,
-      onRunning: (tool) => {
-        entry.running = tool
-        tell()
-      },
-      onClaim: (id) => {
-        entry.claim = id
-        tell()
-      },
+  // Nothing is followed until this page has the task client.
+  const contextReady = taskClient()
+    .then(() => {
+      if (entry.disposed) return null
+      handle.on("change", onChange)
+      restore()
+      askSoon()
+      return pageContext(handle, { repo, events, view })
     })
-    calls.tick().catch(() => {})
-  })
+    .then((context) => {
+      if (entry.disposed || !context) return
+      calls = pageCalls(handle, {
+        context,
+        builtins: AGENT.builtins,
+        plugins: () => loadPluginTools(),
+        afterCall: AGENT.afterCall,
+        startSession: askOnly(repo),
+        followSession: followFor(repo),
+        ask,
+        onRunning: (tool) => {
+          entry.running = tool
+          tell()
+        },
+        onClaim: (id) => {
+          entry.claim = id
+          tell()
+        },
+      })
+      calls.tick().catch(() => {})
+    }, () => {})
 
   /** Open the session's watches again whenever which watches it has changes. */
   function restore() {
@@ -456,9 +463,6 @@ function startFollowing(handle, repo) {
     restore()
     askSoon()
   }
-  handle.on("change", onChange)
-  restore()
-  askSoon()
 
   function dispose() {
     if (entry.disposed) return

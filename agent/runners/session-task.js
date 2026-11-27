@@ -6,6 +6,7 @@
  * It runs in a pool's worker: a Node host's thread, or a browser pool's run
  * worker. So it imports only what both resolve: its own neighbours, and
  * automerge through host/modules.js (a task's bare imports, tasks/README.md).
+ * The task client is the pool's registry's, as a page's is (host/import.js).
  * What only Node has (net/node-fetch.mjs, with its DNS check) is imported
  * only where `process` says this is Node.
  *
@@ -36,8 +37,8 @@ import { modelInfo } from "../providers/catalogue.js"
 import { guardedFetch, SYNC_SERVERS } from "../net/guard.js"
 import { relayFetch } from "../net/relay.js"
 import { braveSearch } from "../tools/web.js"
-import { recordsOf, isStop } from "../host/task-rules.js"
 import { Automerge } from "../host/modules.js"
+import { taskClient } from "../host/import.js"
 
 /** Whether this is a Node host's thread rather than a browser's run worker. */
 const inNode = () => typeof process !== "undefined" && !!process.versions?.node
@@ -74,6 +75,7 @@ export function rebased(provider, base) {
 
 /** The ids of a task's runs, read from its document with the rules' reader; a stop is no run. */
 export async function runsOfTask(repo, taskUrl) {
+  const { recordsOf, isStop } = await taskClient()
   const task = (await repo.find(taskUrl)).doc()
   return recordsOf(task)
     .filter((record) => !isStop(record) && typeof record.id === "string")

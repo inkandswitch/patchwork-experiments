@@ -42,8 +42,8 @@ import { liftBudget, dollars } from "../session/usage.js"
 import { unansweredCalls } from "../session/calls.js"
 import { needsWork } from "../kernel/runner.js"
 import { workKey } from "../kernel/burst.js"
-import { stopWork as stopTaskWork } from "../host/task-client.js"
 import { AutomergeRepo } from "../host/modules.js"
+import { clientHere } from "../host/import.js"
 import { PLAN, isCurrent, writable, changePlan, PlanVersionError, STEP, stepPrompt, reopenPrompt, states, STATE, REQUEST_TOOL_ID, budgetOf, notStarted, startBudget, staleInputs, openRequests, reopenSteps, beginStep, finishStep, failStep, cancelStep, settlePlan, stopPlan, pausePlan, told, tell, finishedKey, endKey, pauseKey, budgetKey, stoppedKey, staleKey, questionKey, requestKey, attempt } from "./plan.js"
 import { decide } from "./decide.js"
 import { scopeOf, webScope, sameScope, initLedger } from "../kernel/scope.js"
@@ -193,7 +193,7 @@ export class WorkflowDriver {
     this.follow = follow
     this.follows = new Map() // sessionUrl -> release, for each running step's session followed here
     this.holders = new Set()
-    this.stopWork = stopWork ?? ((r, url) => stopTaskWork(r, workKey(url)))
+    this.stopWork = stopWork ?? (async (r, url) => clientHere()?.stopWork(r, workKey(url)) ?? false)
     this.notify = notify
     // Every tool the page that started this has, as `{ builtins, plugins }`,
     // for checking a step's prompt before it starts (step-tools.js). Without

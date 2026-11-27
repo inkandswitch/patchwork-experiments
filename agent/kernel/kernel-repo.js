@@ -26,7 +26,6 @@
 import { addedHeads } from "./own-changes.js"
 import { Automerge as A, AutomergeRepo } from "../host/modules.js"
 import { repairDocUrl, documentIdOf } from "../documents/doc-urls.js"
-import { isTask } from "../host/task-rules.js"
 
 const { decodeHeads, encodeHeads } = AutomergeRepo
 
@@ -53,8 +52,13 @@ export const refuse = () => {
   throw new Error(KERNEL_REFUSAL)
 }
 
-/** A task asked for a session's work: its input holds its asker's keys. */
-export const isSessionTask = (doc) => isTask(doc) && typeof doc.key === "string" && doc.key.startsWith("agent:")
+/**
+ * A task asked for a session's work: its input holds its asker's keys. Told
+ * here, as the task rules tell a task (an `importUrl` and a list of runs),
+ * since every tool's repo refuses one whether or not the Tasks package is
+ * installed where it runs.
+ */
+export const isSessionTask = (doc) => typeof doc?.importUrl === "string" && Array.isArray(doc.runs) && typeof doc.key === "string" && doc.key.startsWith("agent:")
 
 export const TASK_REFUSAL = "That document is an agent session's task: its input holds its asker's keys, so no tool reads it."
 

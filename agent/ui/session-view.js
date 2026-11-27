@@ -27,7 +27,7 @@ import { decide, answerQuestion } from "../kernel/loop.js"
 import { accountContext, follow, askFor, followWorkFor, stopFor, takeOverFor, letGo } from "../runners/page.js"
 import { stopSession } from "../session/recovery.js"
 import { STOP } from "../session/status.js"
-import { POOL_ID_KEY, poolHere } from "../host/task-client.js"
+import { taskClient, clientHere } from "../host/import.js"
 import { workflowOf } from "../workflow/plan.js"
 import { getMount, mountForPerson, parkMount } from "../tools/checking.js"
 import { readKey, onKeyChange, connectAccountKeys } from "../providers/keys.js"
@@ -47,10 +47,10 @@ import { ensureStyles } from "./styles.js"
 
 ensureStyles()
 
-/** This browser's pool id, as the tasks package keeps it, or null. */
-function poolIdHere() {
+/** This browser's pool id, as the tasks package keeps it (under its client's key), or null. */
+function poolIdHere(tasks) {
   try {
-    return globalThis.localStorage?.getItem(POOL_ID_KEY) || null
+    return globalThis.localStorage?.getItem(tasks.POOL_ID_KEY) || null
   } catch {
     return null
   }
@@ -168,16 +168,21 @@ export function AgentTool(handle, element, options = {}) {
   const followed = repo ? follow(handle, { repo, element: root }) : null
   const offRunning = followed?.onRunning(() => render()) ?? (() => {})
   // What the queue says of the session's task, and why the last ask for it
-  // failed (runners/ask.js), for the line under the composer.
+  // failed (runners/ask.js), for the line under the composer: followed from
+  // when this page has the task client (connected below). Until the Tasks
+  // package is installed here, the line says so.
   let work = null
   let askFailed = null
-  const offWork = repo
-    ? followWorkFor(repo, handle.url, (view, failed) => {
-        work = view
-        askFailed = failed ?? null
-        render()
-      })
-    : () => {}
+  let noTasks = false
+  let offWork = () => {}
+  const followTasks = () => {
+    noTasks = false
+    offWork = followWorkFor(repo, handle.url, (view, failed) => {
+      work = view
+      askFailed = failed ?? null
+      render()
+    })
+  }
   const ask = () => (repo ? askFor(repo, handle.url) : Promise.resolve(null))
   const names = watchNames({ repo, onChange: () => render() })
   const installs = watchInstalls({ repo, onChange: () => render() })
@@ -281,14 +286,16 @@ export function AgentTool(handle, element, options = {}) {
   // ---- rendering -------------------------------------------------------
   /** What the view shows now (ui/session-value.js). */
   function value(doc) {
+    const tasks = clientHere()
     return sessionValue(doc, {
       mode,
       hasKey: !!readKey(doc.config?.providerId ?? "openrouter"),
       keysSettled,
       work,
       askFailed,
-      pool: poolIdHere(),
-      poolHere: poolHere(),
+      tasks: !noTasks,
+      pool: tasks ? poolIdHere(tasks) : null,
+      poolHere: tasks?.poolHere(),
       pageTool: followed?.running() ?? null,
       pageClaim: followed?.claim() ?? null,
       voiceStatus: composer.dictation.status(),
@@ -364,6 +371,14 @@ export function AgentTool(handle, element, options = {}) {
     keysSettled = true
     render()
   })
+  // The task client (host/import.js), got once for the page and kept.
+  if (repo && clientHere()) followTasks()
+  else if (repo)
+    taskClient(() => ((noTasks = true), render())).then(() => {
+      if (disposed) return
+      followTasks()
+      render()
+    }, () => {})
 
   render()
   installs.refresh(handle.doc())

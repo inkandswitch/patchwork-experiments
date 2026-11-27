@@ -14,11 +14,12 @@
  *                   followWork: a task view), or null before it has said
  *     askFailed     why the last ask for its work failed, without urls
  *                   (runners/ask.js followWork), or null
- *     pool          this browser's pool id (the tasks package's POOL_ID_KEY),
+ *     tasks         false where the Tasks package is not installed here (the
+ *                   registry has no task client); only false says so
+ *     pool          this browser's pool id (the task client's POOL_ID_KEY),
  *                   or null
  *     poolHere      whether this page takes part in its browser's pool: the
- *                   task client's poolHere(), false where the tasks package
- *                   is not installed; only false says so
+ *                   task client's poolHere(); only false says so
  *     pageTool     the tool of the parked call this page runs now, or null
  *     pageClaim     the id this page's follower wrote into `burst` to take a
  *                   parked call (runners/page.js follow `claim()`), or null
@@ -56,6 +57,8 @@ export const HINTS = [
   // so it must say why nothing happens in it.
   { name: "earlier", when: (f) => f.version === "earlier", says: () => "This session is from an earlier version of the agent and does not run. Start a new one to carry on." },
   { name: "outdated", when: (f) => f.outdated || f.version === "newer", says: () => "Waiting for a newer version of the agent: something in this session needs it" },
+  // Without the task client this page asks for nothing and follows nothing.
+  { name: "no-tasks", when: (f) => !f.tasks, says: () => "This needs the Tasks package, which is not installed here." },
   { name: "no-key-elsewhere", when: (f) => !f.hasKey && f.work === "elsewhere", says: () => "Working on another device — this browser has no API key" },
   { name: "no-key", when: (f) => !f.hasKey, says: () => "Add an API key to start" },
   { name: "asking", when: (f) => f.asking > 0, says: (f) => (f.asking === 1 ? "Waiting on your answer" : `Waiting on ${f.asking} answers`) },
@@ -70,9 +73,9 @@ export const HINTS = [
   },
   { name: "here", when: (f) => f.work === "here", says: () => "Working on this browser… Enter to steer, Stop to interrupt" },
   { name: "elsewhere", when: (f) => f.work === "elsewhere", says: () => "Working on another device… Enter to steer, Stop to interrupt" },
-  // Without the tasks package this browser runs none of it: only another of
-  // the person's devices serving their queue can take it.
-  { name: "waiting-elsewhere", when: (f) => f.work === "waiting" && !f.poolHere, says: () => "Waiting for another of your devices to take it: the tasks package is not installed in this browser" },
+  // Without a pool host in this page this browser runs none of it: only
+  // another of the person's devices serving their queue can take it.
+  { name: "waiting-elsewhere", when: (f) => f.work === "waiting" && !f.poolHere, says: () => "Waiting for another of your devices to take it: this browser is not taking work" },
   { name: "waiting", when: (f) => f.work === "waiting", says: () => "Waiting for a device to take it" },
   // An ask that failed is said while there is work, until the next ask (runners/ask.js).
   {
@@ -138,6 +141,7 @@ export function hintFacts(doc, local) {
     version: versionStanding(doc),
     outdated: unknownBlocks(doc).length > 0,
     hasKey: !!local.hasKey,
+    tasks: local.tasks !== false,
     work: stopped ? null : workOf(local.work ?? null, local.pool ?? null),
     poolHere: local.poolHere !== false,
     foreign: !here && foreignBurst(doc, local.work ?? null),

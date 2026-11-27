@@ -18,9 +18,11 @@ page that asks. `runners/session-task.js` is the task's entry.
 - With no network it is the same: the queue and the session are written in
   this browser, its pool takes the task, and the burst runs up to its model
   request, which waits for the network (SESSION.md, `reconnecting`).
-- Where the tasks package is not installed in the browser, the work is still
-  asked of the person's queue and waits there for another of their machines;
-  the line under the composer says so.
+- The task client is the Tasks package's, asked of the plugin registry (the
+  library `tasks-next`, `host/import.js`) once and kept, in a page and in a
+  pool alike. Where the package is not installed in the browser, nothing is
+  asked or followed and the line under the composer says the Tasks package is
+  needed; once it arrives, the page carries on.
 - Asking under a key whose task has not ended is asking once, so any number of
   views and writers may ask; a re-ask needs heads no ended task saw.
 - An ask that fails (no account open, nowhere to keep the queues, the list of
@@ -63,7 +65,7 @@ Lowest first:
 
 | | |
 |---|---|
-| `host/` | Patchwork's modules and context, wherever this is running: a page, a run worker, Node; the task system's client and rules (kit copies, `scripts/check-kit.mjs` at the repo root) |
+| `host/` | Patchwork's modules and context, wherever this is running: a page, a run worker, Node; the task client, from the plugin registry |
 | `net/` | where a request may go (`guard.js`), the fetch relay, and what an interruption is |
 | `documents/` | what documents hold, read and written with no session in sight: URLs, values, edits, history, files, images, PDFs, citations |
 | `session/` | the session document as plain data: its shape, blocks, calls, status, stops, debris, approval, the request sent to a model |
@@ -119,8 +121,8 @@ Add that URL to your account's module settings (the Packages tool, or
 
 A model key is kept in the account's settings (or the browser's storage) and
 put in each task's input by the page that asks; it never enters a session.
-Work is asked of the person's own queue, which the tasks package makes on
-first need, and runs in that browser's pool or on another of their machines
+Work is asked through the Tasks package, which must be installed too, of the
+person's own queue, which it makes on first need, and runs in that browser's pool or on another of their machines
 serving it. `web_search` needs a Brave Search
 API key and, in a browser, the fetch relay (`fetch-relay/` beside this
 package).

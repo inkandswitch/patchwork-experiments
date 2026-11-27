@@ -38,6 +38,37 @@ export function hostImport(name) {
   return importSpecifier(specifier)
 }
 
+let client = null
+let libraries = null
+
+/**
+ * The task client (tasks/README.md, "Using it from another package"): the
+ * Tasks package's library `tasks-next` in this realm's plugin registry, asked
+ * for the same way in a page and in a pool's worker, got once and kept.
+ * Resolves once the package is installed here, at once where it is, and
+ * tells `onMissing` first when it is not yet. Rejects where there is no
+ * registry (tests, a plain Node program).
+ */
+export function taskClient(onMissing = null) {
+  if (client) return Promise.resolve(client)
+  libraries ??= hostImport("plugins").then(({ getRegistry }) => getRegistry("patchwork:library"))
+  return libraries
+    .then((registry) => {
+      if (!registry.has("tasks-next")) onMissing?.()
+      return registry.loadWhenReady("tasks-next")
+    })
+    .then(({ module }) => (client ??= module))
+}
+
+/** The task client once had, or null. */
+export const clientHere = () => client
+
+/** Tests: hold `stand` as the task client; null holds none, and asks the registry afresh. */
+export function _holdClient(stand) {
+  client = stand
+  libraries = null
+}
+
 /** Import a host module, or null when it is not available (tests, node). */
 export async function tryHostImport(name) {
   try {

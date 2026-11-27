@@ -15,6 +15,9 @@ import { written } from "../fixtures/calls.js"
 import { STOP, stopOf } from "../session/status.js"
 import { findCall, findResult } from "../session/calls.js"
 import { NOT_RUN } from "../session/recovery.js"
+import { standIn, install } from "../fixtures/task-client.js"
+import { setHostUrls } from "../host/urls.js"
+import { join } from "node:path"
 
 /** A DocHandle double with the parts the tool actually uses. */
 let handleCounter = 0
@@ -242,7 +245,7 @@ describe("asking for the work, and the line under the composer", () => {
       watchWork: (_repo, _key, onChange) => ((watch.say = onChange), () => {}),
       stopWork: vi.fn(async () => true),
     }
-    resetRunners(async (_repo, url, opts) => (asked.push({ url, keys: opts.keys }), { asked: true, outcome: "idle" }), { with: client })
+    resetRunners(async (_repo, url, opts) => (asked.push({ url, keys: opts.keys }), { asked: true, outcome: "idle" }), { with: standIn(client) })
     return { asked, watch, client }
   }
 
@@ -285,7 +288,7 @@ describe("asking for the work, and the line under the composer", () => {
     const { element, cleanup } = mount(handle)
     const hint = () => element.querySelector(".agent-hint").textContent
     watch.say({ state: "waiting", runs: [] })
-    expect(hint()).toBe("Waiting for another of your devices to take it: the tasks package is not installed in this browser")
+    expect(hint()).toBe("Waiting for another of your devices to take it: this browser is not taking work")
     // The package's host comes: it says so on hostsChanged, as pool-host.ts does, with no news of the task.
     globalThis.patchworkTasks.poolHosts = { 1: {} }
     globalThis.patchworkTasks.hostsChanged.dispatchEvent(new Event("change"))
@@ -296,6 +299,31 @@ describe("asking for the work, and the line under the composer", () => {
     globalThis.patchworkTasks.poolHosts = {}
     globalThis.patchworkTasks.hostsChanged.dispatchEvent(new Event("change"))
     expect(line.textContent).toBe("Waiting for a device to take it")
+  })
+
+  it("where the Tasks package is not installed, says so and does nothing else; once it arrives, carries on", async () => {
+    const asked = []
+    resetRunners(async (_repo, url) => (asked.push(url), { asked: true, outcome: "idle" }))
+    // The page's registry, which has no task client until the package is installed.
+    setHostUrls({ "@inkandswitch/patchwork-plugins": join(process.cwd(), "fixtures", "task-client.js") })
+    try {
+      localStorage.setItem("patchwork-agent:key:openrouter", "sk-or-test")
+      const handle = fakeHandle()
+      handle.change((d) => d.turns.push(makeTurn("user", [textBlock("go")])))
+      const { element, cleanup } = mount(handle)
+      const hint = () => element.querySelector(".agent-hint").textContent
+      await vi.waitFor(() => expect(hint()).toBe("This needs the Tasks package, which is not installed here."))
+      await new Promise((r) => setTimeout(r, 300))
+      expect(asked).toEqual([])
+      let say = null
+      install(standIn({ watchWork: (_repo, _key, onChange) => ((say = onChange), () => {}) }))
+      await vi.waitFor(() => expect(asked).toEqual([handle.url]))
+      say({ state: "waiting", runs: [] })
+      expect(hint()).toBe("Waiting for another of your devices to take it: this browser is not taking work")
+      cleanup()
+    } finally {
+      setHostUrls(null)
+    }
   })
 
   it("a mark nobody here hears is someone else's: Take over clears it and asks", async () => {

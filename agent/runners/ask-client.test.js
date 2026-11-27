@@ -1,19 +1,26 @@
 /**
- * runners/ask.js with the task system's own client: what it asks for, and
- * the own queue among the input's documents that always ask.
+ * The task client runners/ask.js asks with: the registry's (host/import.js
+ * taskClient), got once and kept; and the own queue among the input's
+ * documents that always ask. The registry and the client are stand-ins
+ * (fixtures/task-client.js); the probes use the Tasks package's own.
  */
 import { describe, it, expect, afterEach } from "vitest"
+import { join } from "node:path"
 import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { initSession, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
-import * as kit from "../host/task-client.js"
-import { askWork, forget, TASK_CLIENT, SESSION_TASK, workKey } from "./ask.js"
+import { setHostUrls } from "../host/urls.js"
+import { taskClient, clientHere, _holdClient } from "../host/import.js"
+import { standIn, install } from "../fixtures/task-client.js"
+import { askWork, forget, workKey } from "./ask.js"
 
 await initSubduction()
 
 const followed = []
 afterEach(() => {
   for (const url of followed.splice(0)) forget(url)
+  setHostUrls(null)
+  _holdClient(null)
 })
 
 function session(repo) {
@@ -40,18 +47,34 @@ function client({ own } = {}) {
   }
 }
 
-describe("the task client askWork uses", () => {
-  it("is the kit copy's doWork, watchWork, stopWork and ownQueue by default", () => {
-    expect(TASK_CLIENT).toEqual({ doWork: kit.doWork, watchWork: kit.watchWork, stopWork: kit.stopWork, ownQueue: kit.ownQueue })
-    expect(Object.isFrozen(TASK_CLIENT)).toBe(true)
+describe("the task client", () => {
+  it("is the registry's library tasks-next: said missing until the Tasks package arrives, then had, and kept", async () => {
+    setHostUrls({ "@inkandswitch/patchwork-plugins": join(process.cwd(), "fixtures", "task-client.js") })
+    let missing = 0
+    const had = taskClient(() => missing++)
+    await new Promise((r) => setTimeout(r, 20))
+    expect([missing, clientHere()]).toEqual([1, null])
+    const first = standIn()
+    install(first)
+    expect(await had).toBe(first)
+    expect(clientHere()).toBe(first)
+    // Got once: a newer one registered later is not taken up.
+    install(standIn())
+    expect(await taskClient(() => missing++)).toBe(first)
+    expect(missing).toBe(1)
   })
 
-  it("asks for this package's session task, in the package the asker was loaded from", () => {
-    // Loaded from a file, not a package, as in a test: there is no package to name.
-    expect(SESSION_TASK).toBe(kit.inSamePackage(import.meta.url, "runners/session-task.js"))
-    expect(SESSION_TASK).toBe(null)
-    const pkg = encodeURIComponent(`${new Repo({ network: [] }).create({}).url}#abc`)
-    expect(kit.inSamePackage(`https://site.example/${pkg}/runners/ask.js`, "runners/session-task.js")).toBe(`/${pkg}/runners/session-task.js`)
+  it("is not had where there is no registry, and nothing is asked", async () => {
+    await expect(taskClient()).rejects.toThrow()
+    expect(clientHere()).toBe(null)
+  })
+
+  it("is what askWork asks with when none is handed in", async () => {
+    const repo = new Repo({ network: [] })
+    const c = client({ own: null })
+    _holdClient(c)
+    await askWork(repo, session(repo).url, { importUrl: "data:text/javascript,", onOnline: () => () => {} })
+    expect(c.asks).toHaveLength(1)
   })
 
   it("puts the person's own queue among the documents that always ask, once, keys last", async () => {

@@ -21,6 +21,7 @@ import { makeMock } from "../fixtures/mock-provider.js"
 import { setHostUrls } from "../host/urls.js"
 import { askWork } from "../runners/ask.js"
 import { _reset } from "../runners/page.js"
+import { standIn } from "../fixtures/task-client.js"
 
 await initSubduction()
 
@@ -195,7 +196,7 @@ describe("a workflow with only its view open", () => {
         return made.get(input.session)
       },
     })
-    _reset(askWork, { with: pool.client })
+    _reset(askWork, { with: standIn(pool.client) })
 
     const element = document.createElement("div")
     document.body.append(element)

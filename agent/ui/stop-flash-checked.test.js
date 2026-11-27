@@ -16,6 +16,7 @@ import { STOP, stopOf } from "../session/status.js"
 import { askWork, forget, CANCELLED } from "../runners/ask.js"
 import { _reset } from "../runners/page.js"
 import { AgentTool } from "./session-view.js"
+import { standIn } from "../fixtures/task-client.js"
 
 await initSubduction()
 
@@ -101,7 +102,7 @@ function mounted(opts) {
     d.turns.push(makeTurn("user", [textBlock("hello")]))
   })
   const q = queue(handle, opts)
-  _reset(askWork, { with: q.client })
+  _reset(askWork, { with: standIn(q.client) })
   const element = document.createElement("div")
   document.body.append(element)
   const cleanup = AgentTool(handle, element, { repo })

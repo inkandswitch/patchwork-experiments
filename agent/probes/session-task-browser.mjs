@@ -12,12 +12,14 @@
 // pool and run workers name the real sync server, the page makes an account,
 // joins its queue and mounts the pool, as browser-run's check 22 does; then
 // it makes a session and asks for /agent/runners/session-task.js with the
-// kit client's run(). The model is a stand-in served at /provider on the
+// tasks client's run(). The page's registry has the Tasks package, from its
+// built entry, as a page where it is installed does. The model is a stand-in served at /provider on the
 // same origin (probes/stand-in-provider.mjs), with a made-up key.
 //
 // Checks, one line each:
 //   1 the session task runs in the browser's run worker and answers { outcome, heads, own }
-//   2 it imports Automerge by bare name there (host/modules.js), resolved by the page's import map
+//   2 it imports Automerge by bare name there (host/modules.js), resolved by the page's import map,
+//     and asks the run worker's registry for the task client (host/import.js) to read its task's runs
 //   3 the text streams into the page's copy of the session, piece by piece
 //
 // Chrome, the server and the files are gone at the end, pass or fail.
@@ -82,14 +84,16 @@ const vendor = {
   "automerge-subduction-slim": "@automerge/automerge-subduction/slim",
   "solid-js": "solid-js",
   "solid-js-web": "solid-js/web",
+  "patchwork-plugins": "@inkandswitch/patchwork-plugins",
+  "patchwork-filesystem": "@inkandswitch/patchwork-filesystem",
 };
 const entryPoints = {};
 for (const [name, spec] of Object.entries(vendor)) {
   writeFileSync(join(stubs, `${name}.js`), `export * from ${J(spec)};\n`);
   entryPoints[name] = join(stubs, `${name}.js`);
 }
-// The page's client: this package's kit copy, the same file as the tasks package's.
-entryPoints["task-client"] = join(AGENT, "host/task-client.js");
+// The stand-in page's own client, as browser-run.mjs builds it.
+entryPoints["task-client"] = join(TASKS, "src/task-client.js");
 await build({
   entryPoints,
   outdir: join(root, "vendor"),
@@ -217,6 +221,8 @@ async function tab(path, browserContextId) {
 try {
   const { browserContextId } = await send("Target.createBrowserContext", {});
   const S = await tab(`/probe/index.html?sync=${encodeURIComponent(SYNC)}`, browserContextId);
+  // The Tasks package installed in the page's registry, from its built entry.
+  await S.js("(async () => { const { registerPlugins } = await import('@inkandswitch/patchwork-plugins'); registerPlugins((await import('/dist/index.js')).plugins, location.origin + '/dist/index.js'); return true; })()");
   await S.js("probe.makeAccount()");
   const joined = await S.js("probe.join()");
   await S.js("probe.mount()");
@@ -272,9 +278,9 @@ try {
   const fromAgent = served.filter((p) => p.startsWith("/agent/"));
   check(
     2,
-    "it imports Automerge by bare name in the run worker (host/modules.js), resolved by the page's import map",
-    !!result && fromAgent.includes("/agent/host/modules.js") && !workerErrors.some((e) => /automerge|resolve|import/i.test(e)),
-    `${fromAgent.length} of this package's files served, host/modules.js among them ${fromAgent.includes("/agent/host/modules.js")}, node-fetch.mjs among them ${fromAgent.includes("/agent/net/node-fetch.mjs")} (expected false); workers' errors ${workerErrors.length ? J(workerErrors.slice(0, 5)) : "none"}`,
+    "it imports Automerge by bare name in the run worker (host/modules.js), resolved by the page's import map, and reads its task's runs with the task client its registry gives (host/import.js)",
+    !!result && fromAgent.includes("/agent/host/modules.js") && fromAgent.includes("/agent/host/import.js") && !fromAgent.some((p) => /task-(client|rules)/.test(p)) && !workerErrors.some((e) => /automerge|resolve|import|tasks-next/i.test(e)),
+    `${fromAgent.length} of this package's files served, host/modules.js among them ${fromAgent.includes("/agent/host/modules.js")}, host/import.js ${fromAgent.includes("/agent/host/import.js")}, a task file of its own ${fromAgent.some((p) => /task-(client|rules)/.test(p))} (expected false), node-fetch.mjs among them ${fromAgent.includes("/agent/net/node-fetch.mjs")} (expected false); workers' errors ${workerErrors.length ? J(workerErrors.slice(0, 5)) : "none"}`,
   );
   const lengths = [...new Set(got.seen.map((s) => s.length))].filter((n) => n > 0);
   const sums = PIECES.map((_, k) => PIECES.slice(0, k + 1).join("").length);
