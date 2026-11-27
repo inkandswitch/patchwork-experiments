@@ -1854,3 +1854,9 @@ ran it (`declared`, `declaredWhere`): a package's tool declared for a worker
 runs in the burst, and only a tool declared for a page parks. A tool whose
 code does not load is offered all the same, and the call that needs it fails
 saying so, in a page as in a pool.
+
+A burst builds its toolset without loading any package's code. It loaded each
+tool's code to read its `present` and `summarize`, a page's tools included, so
+a page tool whose `load()` never settled in a pool held every burst there. A
+tool's code now loads only where its call runs, and those two are read from it
+there.

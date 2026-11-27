@@ -181,19 +181,19 @@ A package registers an `agent:tool` plugin beside its views and datatypes:
 
 - The metadata is plain JSON at the top level, as a registry's entries cross
   into a pool's workers as plain descriptions; the code is behind `load()`.
-- It cannot take a built-in's id. Its code is looked up again at every call,
-  so a package edited mid-run runs as it is now.
-- A burst offers each tool of its pool's registry as declared, read with the
-  lookups a page makes in its own (`assembly/plugins.js`). A `"worker"`
-  tool's code loads and runs in the burst, with the burst's context; a
-  `"host"` tool's calls park for a page, whether or not its code loads in the
-  pool. Code that does not load fails the call that needed it, saying so.
+- It cannot take a built-in's id. `risk` defaults to `write`, `where` to `"worker"`.
+- A burst offers each tool of its pool's registry as declared, read once with
+  the lookups a page makes in its own (`assembly/plugins.js`): a package
+  installed mid-burst is offered from the next. Code is looked up at each
+  call, only where the call runs: a `"worker"` tool's in the burst, as
+  registered now, with the burst's context, `present` and `summarize` read
+  from it; a `"host"` tool's never in the pool, as its calls park for a page.
+  Code that does not load, or a package gone since, fails that call, saying so.
 - What a burst offers is what its pool has: in a browser, the page's packages
   kept in automerge (not the site's built-in plugins, served over http:
   tasks/PLANS.md); on a Node host, what its `--modules` settings name that
   loads in Node. A Node host with no module list has only the task client, so
   a burst there offers the agent's built-in tools alone.
-- `risk` defaults to `write`, `where` to `"worker"`.
 
 **What this exposes, for the isolation work:** other packages' tool code now
 runs inside a burst, in the realm that holds the session's keys.

@@ -18,6 +18,7 @@ export function getRegistry(type) {
   if (type === "agent:tool") {
     return {
       all: () => [ECHO],
+      get: (id) => (id === ECHO.id ? ECHO : undefined),
       load: async (id) => (id === ECHO.id ? { module: { execute: async (input) => (ran.push(input?.text ?? null), `echoed ${input?.text ?? ""} in a page`) } } : null),
     }
   }

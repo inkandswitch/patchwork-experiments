@@ -714,6 +714,14 @@ async function streamTurn(opts) {
     return { calls: [], stopReason: "length", turnId, broken }
   }
 
+  // A package's tool says how its calls read from its code (kernel/tool.js
+  // pluginTool), loaded here for a call this run may make and only for one:
+  // a page's tool's code never loads in a pool.
+  for (const call of calls) {
+    const tool = toolset.get(call.name)
+    if (tool?.current && opts.canRun(tool.where)) await tool.current().catch(() => null)
+  }
+
   // Commit the calls once the stream is complete, so the transcript never shows
   // a half-parsed call. Approval state is decided here, at write time.
   if (calls.length && stillOurs()) {

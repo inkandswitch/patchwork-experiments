@@ -111,8 +111,8 @@ It gives a burst `nodeFetch` (every name resolved and checked, redirects
 followed by hand, the sync servers refused) and Brave search with the input's
 key. Its plugin registry is what the burst offers beyond the built-in tools:
 given `--modules <module settings>`, the agent tools of those packages, each
-declared for a worker run there; with no module list, none (TOOLS.md, *What a
-pool has*). Page tools' calls park until a page takes them.
+declared for a worker run there; with no module list, none (TOOLS.md, *A
+package's tool*). Page tools' calls park until a page takes them.
 
 ## Installing
 

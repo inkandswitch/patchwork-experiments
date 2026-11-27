@@ -47,7 +47,7 @@ const MAX_DETAIL = 64
  * the call only when the tool says it.
  */
 export function presentCall(tool, input, subject = null) {
-  const entry = tool?.present
+  const entry = typeof tool?.present === "function" ? tool.present() : tool?.present
   if (!entry) return null
   try {
     const verb = typeof entry.verb === "function" ? entry.verb(input ?? {}) : entry.verb
@@ -77,10 +77,13 @@ export function toSchema(tool) {
 
 /**
  * A plugin tool, from its metadata and `current`, which loads the plugin as
- * registered now: `{ ...metadata, module }`. `impl` is the module loaded
- * already, for its `summarize` and `present`.
+ * registered now: `{ ...metadata, module }`. What its calls say of
+ * themselves (`present`, `summarize`) is the module's as last loaded here,
+ * and nothing until it is.
  */
-export function pluginTool(description, current, { impl = null } = {}) {
+export function pluginTool(description, current) {
+  let loaded = null
+  const load = async () => (loaded = await current())
   return {
     id: description.id,
     name: description.name ?? description.id,
@@ -110,13 +113,13 @@ export function pluginTool(description, current, { impl = null } = {}) {
     // `current` is the plugin as registered now, metadata and module
     // together, so a caller that admitted this tool by what it declared
     // can check the declaration of the code that is about to run.
-    current,
+    current: load,
     async execute(input, ctx) {
-      return (await current()).module.execute(input, ctx)
+      return (await load()).module.execute(input, ctx)
     },
-    summarize: impl?.summarize ?? null,
+    summarize: (...args) => loaded?.module?.summarize?.(...args) ?? null,
     // How its calls read in the log, from the package's own module (presentCall).
-    present: impl?.present ?? null,
+    present: () => loaded?.module?.present ?? null,
     source: description.importUrl ?? null,
   }
 }

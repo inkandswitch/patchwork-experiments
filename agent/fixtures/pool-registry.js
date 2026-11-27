@@ -8,6 +8,7 @@ export function getRegistry(type) {
   const all = () => installed[type] ?? []
   return {
     all,
+    get: (id) => all().find((plugin) => plugin.id === id),
     has: (id) => all().some((plugin) => plugin.id === id),
     load: async (id) => {
       const plugin = all().find((p) => p.id === id)

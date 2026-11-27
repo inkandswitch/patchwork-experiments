@@ -34,10 +34,11 @@ describe("how a call reads in the log", () => {
     expect(presentCall({ id: "a_tool", present: { verb: "list", detail: (i) => i.path ?? "/" } }, undefined)).toEqual({ verb: "list", detail: "/" })
   })
 
-  it("a package's tool says it from its own module, beside execute", () => {
+  it("a package's tool says it from its own module, beside execute, once its code is loaded", async () => {
     const impl = { execute: () => "ok", present: { verb: "capture", detail: (i) => i.url } }
-    const tool = pluginTool({ id: "web_capture" }, async () => ({ module: impl }), { impl })
+    const tool = pluginTool({ id: "web_capture" }, async () => ({ module: impl }))
+    expect(presentCall(tool, { url: "https://site.test/" })).toBeNull()
+    await tool.current()
     expect(presentCall(tool, { url: "https://site.test/" })).toEqual({ verb: "capture", detail: "https://site.test/" })
-    expect(presentCall(pluginTool({ id: "web_capture" }, async () => ({ module: impl })), { url: "https://site.test/" })).toBeNull()
   })
 })

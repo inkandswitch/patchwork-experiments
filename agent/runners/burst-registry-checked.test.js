@@ -138,8 +138,8 @@ describe("the registry changing under a burst", () => {
     expect(offered(requests[0])).toEqual(["pkg_gone"])
     const result = findResult(session.doc(), "c1").block
     expect(result.isError).toBe(true)
-    // What it says: the message core's registry leads to (load gives undefined for an id it no longer has).
-    expect(String(result.output)).toBe("Error: The pkg_gone package no longer provides an execute function.")
+    // Core's registry's load gives undefined for an id it no longer has.
+    expect(String(result.output)).toBe("Error: pkg_gone is no longer installed here.")
     expect(lastWords(session.doc())).toBe("It went away.")
   })
 
@@ -224,7 +224,7 @@ describe("approval of a worker tool that asks", () => {
 })
 
 describe("a page tool in a pool", () => {
-  it("whose code does not load in the pool is offered, parked and run by the page", async () => {
+  it("whose code does not load in the pool is offered, parked and run by the page, its code never loaded in the pool", async () => {
     const ranIn = []
     let poolLoads = 0
     const pageTool = tool("pkg_dom", "host", (input, ctx) => (ranIn.push(ctx.where), "drawn"))
@@ -250,17 +250,14 @@ describe("a page tool in a pool", () => {
     page.dispose()
     expect(ranIn).toEqual(["page"])
     expect(output(session.doc(), "c1")).toMatch(/^drawn/)
-    // What the pool did with the page tool's code: it tried to load it, for its present/summarize.
-    expect(poolLoads).toBeGreaterThan(0)
+    // The page tool's code never loaded in the pool.
+    expect(poolLoads).toBe(0)
   })
 
-  // A defect's case: a burst loads every tool's code as it builds its
-  // toolset (assembly/plugins.js loadPluginTools, `impl = await current()`),
-  // page tools included, with no time limit. A package whose load() never
-  // settles in the pool (waiting on something only a page has) holds every
-  // burst of that pool before its first request to the model. Before this
-  // slice a burst loaded no plugin code.
-  it.fails("a page tool whose load never settles in the pool does not hold the burst", async () => {
+  // A package whose load() never settles in a pool (waiting on something only
+  // a page has) does not hold a burst: a burst loads no tool's code to build
+  // its toolset, and a page tool's code never in the pool.
+  it("a page tool whose load never settles in the pool does not hold the burst", async () => {
     installed["agent:tool"] = [{ ...tool("pkg_waits", "host", () => "x"), load: () => new Promise(() => {}) }]
     const requests = provider(["Hello."])
     const { input, ctx } = await world()

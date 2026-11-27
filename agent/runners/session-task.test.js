@@ -191,9 +191,10 @@ describe("the tools a burst has: its pool's registry", () => {
     expect(JSON.stringify(requests[0].body.messages[0])).toContain("pkg-howto")
   })
 
-  it("runs a worker tool of another package in the burst, with the burst's context, and its result lands in the session", async () => {
+  it("runs a worker tool of another package in the burst, with the burst's context, and its result lands in the session, said as its code says", async () => {
     const seen = []
-    installed["agent:tool"] = [tool("pkg_count", "worker", (input, ctx) => (seen.push({ input, ctx }), `counted ${input.what}`))]
+    const counting = tool("pkg_count", "worker", (input, ctx) => (seen.push({ input, ctx }), `counted ${input.what}`))
+    installed["agent:tool"] = [{ ...counting, load: async () => ({ ...(await counting.load()), present: { verb: "count", detail: (i) => i.what }, summarize: (i) => `${i.what} counted` }) }]
     const requests = provider({ calls: [{ id: "c1", name: "pkg_count", input: { what: "boats" } }] }, ["There are boats."])
     const { session, input, ctx } = await world()
     expect((await sessionTask(input, ctx)).outcome).toBe("idle")
@@ -203,7 +204,8 @@ describe("the tools a burst has: its pool's registry", () => {
     expect(seen[0].ctx.fetchImpl.policy.dns).toBe(true)
     expect(typeof seen[0].ctx.repo.find).toBe("function")
     const doc = session.doc()
-    expect(findCall(doc, "c1").block.where).toBe("worker")
+    expect(findCall(doc, "c1").block).toMatchObject({ where: "worker", shown: { verb: "count", detail: "boats" } })
+    expect(findResult(doc, "c1").block).toMatchObject({ summary: "boats counted" })
     expect(resultText(doc, "c1")).toMatch(/^counted boats/)
     expect(requests).toHaveLength(2)
     expect(lastWords(doc)).toBe("There are boats.")
