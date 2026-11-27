@@ -48,3 +48,6 @@ export const WAIT_TASK_PATH = 'dist/tasks/wait.js';
 // which on a keyhive site is no ordinary one.
 export const TASKS_DATABASE = 'patchwork-tasks';
 export const TASKS_HEADS_CHANNEL = 'patchwork-tasks-heads';
+
+/** How the peer id of a browser worker's Repo starts: the site's Repo offers such a peer nothing (browser/pool-host.ts). */
+export const WORKER_PEER = 'task-worker-';

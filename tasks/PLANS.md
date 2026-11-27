@@ -9,7 +9,7 @@ A task that does nothing, asked by a Node process of a Node host on the same Mac
 server (about 75 ms a round trip), takes about 750 ms from asking to the asker having the result:
 median 747–758 ms, worst 813–835 ms (`probes/node-run.mjs --only 1,16`, 2026-11-25); in two runs
 of the whole probe on a machine shared with other work, 798 / 978 and 893 / 1574. The browser pool
-on its stand-in page, asked from that page, takes 10.6 ms (worst 17.7 ms). Throughput, many quick
+on its stand-in page, asked from that page, takes 19.2 ms (worst 26.4 ms, 2026-11-27, its run worker flushing its Repo once per run). Throughput, many quick
 tasks at once, has not been measured with the pool.
 
 ### Where the time goes
@@ -23,7 +23,7 @@ Every step traced on one clock, 20 tasks one at a time on a warm host (median / 
 | The pool finds the task's document | 138 / 204 | One round trip, and a forced write of what arrived |
 | The claim is saved | 53 / 61 | The rule: a run's start is saved before its code is called |
 | Hand-over, import, call, return | 4 / 8 | |
-| The thread saves what the code wrote | 47 / 56 | Measured with the thread saving the imported task document too; the thread saves nothing for code that writes nothing |
+| The thread saves what the code wrote | 47 / 56 | One flush of its Repo, the imported task document included |
 | The end is saved | 72 / 90 | The rule; it delays the start of the end's sync round |
 | The end reaches the asker | 256 / 306 | The end's own round, which starts only once the claim's has finished |
 | **Asked to taken / taken to ended / ended to the asker** | **366 / 107 / 258** | |
@@ -125,100 +125,51 @@ that one machine serves.
   nobody is ranked (every pool heard full, or the only free one still listening): each then takes
   the task the moment a slot frees past the hold, in no order. Ranking full pools after free ones
   would narrow it to the time after every turn. Each waits on a case that needs it.
-- **What the local link still lacks.** In a browser, the tab that runs the pool links the site's
-  Repo to the pool's worker and each run worker (`src/browser/link.ts`, README "Offline and
-  partition"). What is left:
-  - *Linked workers have no socket of their own.* The site's Repo asks its classic peers for a
-    document only once its Subduction source has given up, and one whose server cannot be reached
-    keeps trying (`link.test.ts` shows it), so a worker with both would never ask the page with
-    no network. So a linked worker reaches the sync server only through the page, which gives it
-    only unprotected documents it named. A Repo that asked its classic peers beside Subduction (or
-    a Subduction transport over the port, which needs core to build the site's Repo with
-    `subductionAdapters`) would let a worker keep its own socket. Waits on the Repo.
+- **Left to the Repo.** Three things the task system does not do, because they are a Repo's:
+  - *Sending what was stored but not sent.* A Repo sends a document only while it has it open,
+    and loads a stored one only when something asks for it. So what a worker or a page wrote but
+    had not sent before a reload or a restart (with no network, or a worker ended the moment its
+    run did) is not sent until something opens it. A design bug is being logged with Subduction.
+  - *Holding a run's ending until others have its writes.* A run is reported once its worker's
+    Repo has saved what it wrote; the page and the sync server have it as the Repos sync it. With
+    no network, a page reloaded the instant a run ends may lack the run's writes, which then wait
+    in the run worker's storage on the bug above.
+  - *Deciding what a worker may be given.* The pipe carries what the site's Repo shares with a
+    peer; what a worker may have is the Repo's and keyhive's to decide.
+- **What the pipe still lacks.**
+  - *Piped workers have no socket of their own.* A Repo asks its classic peers for a document
+    only once its Subduction source has given up, and one whose server cannot be reached keeps
+    trying, so a worker with both would never ask the page with no network. A Repo that asked its
+    classic peers beside Subduction (or a Subduction transport over the port) would let a worker
+    keep its own socket. Waits on the Repo.
   - *Another tab than the pool's.* Its site Repo shares a database and a heads channel with the
-    holder's, so its `doWork` is run by the pool, with or without the network, and has what the
-    task wrote when it resolves (browser-run checks 41 and 42). On the deployed site, with the
-    holder hidden behind it, each such ask took about a second (the hidden tab's timers are
-    throttled), against 0.15 to 0.25 s with the holder visible. The site's Repos do not carry the
-    pool's ephemeral messages between tabs: those reach another tab only on the task system's own
-    BroadcastChannel, so what listens there with `local: false` hears no pool. A BroadcastChannel
-    adapter on the site's Repo (measured as D1 in notes/LINK.md) would carry them, with every Repo
-    on the channel hearing all its traffic. Waits on something that needs them.
-  - *A frozen holder that held the site's database.* On the stand-in page, when the holder tab
-    is frozen the other tab takes the pool and links it, but if the frozen tab held the database
-    the two tabs' site Repos share, the other tab's site Repo saves nothing until the frozen one
-    resumes, and its `doWork` waits with it (`ask` saves the task before listing it): 47 s, and
-    over a minute, in the runs where it happened (browser-run `--lifetimes` check 34: every run
-    with `--no-network`, one of three with the network). This is the site's database and the
-    client's save, not the link, and DevTools' freeze may hold a transaction a browser's own
-    freezing would not. A linked pool needs no save before the listing (it has the task from the
-    page's memory), but a pool elsewhere does. Waits on the lead's call.
-  - *Task code reaches the origin beside its link.* A run worker's code can speak on its link only
-    as its own worker, and reaches no other worker's port, but its realm is the site's origin: it
-    can use every BroadcastChannel and IndexedDB database of the origin, the origin's Web Locks,
-    and fetches to it (README, "Offline and partition"). Waits on confinement (below, "A new
-    worker for every run"). On the stand-in page, a run worker's code read a document the page
-    made and never gave it straight from the site's database (a third checker's scratch probe).
-  - *What task code costs the page in its own name.* The page takes a link's worker for a new
-    peer once, and the first message whose data the page could not read ends its link. A message
-    that reads but that the page's Repo still rejects (a change that decodes but cannot be
-    applied, made by hand) is logged by the page each time, without bound; nothing is thrown and
-    nothing stalls. Closing it needs the Repo to say which messages it rejected, or the gate to
-    apply what it passes itself.
-  - *Not shown on the deployed site* (keyhive's Repo): only on a stand-in page and in unit tests.
-    Nor is it shown that the sync server accepts a document a plain worker made offline once the
-    keyhive page takes it in and the network returns, nor hours of use. On the stand-in page,
-    `browser-run.mjs --lifetimes` shows two minutes (check 31), a 5 MB document (32), a hidden,
-    frozen, navigated and reloaded holder (33 to 36, 39), a write made cut off reaching the server
-    once mended (37), and another context hearing the pool through the server (38); ten links at
-    once only `link-check.test.ts` shows (a browser's pool has at most eight run workers). Waits
-    on a staging package for `real-run.mjs`. Nor is the list of `src/browser/unsent.ts` shown
-    there: what a run wrote with no network, the browser restarted before the network came back,
-    reaching the sync server once it does. browser-run check 40 shows it on the stand-in page
-    (whose site Repo is 2.6.0-rabbit.1, which says when it is connected and reports the server's
-    heads); on keyhive's build, where the members it uses may be missing, the list falls back to
-    `navigator.onLine` (which stays true when only DNS fails) to try, counts no time on that, and
-    is bounded only by its cap of 200.
-  - *What the page writes itself with no network.* The list holds only what runs wrote. A
-    document the page makes or changes with no network, and closes before the network returns,
-    is not sent when it does either, until something opens it (check 40's control shows it on the
-    stand-in page). That is the site's Repo's to answer (it loads a stored document only when
-    asked for it), not the task system's; reported here, not fixed.
-  - *Rule 2 is the conservative one.* The page gives a worker only documents keyhive leaves
-    unprotected; sharing a protected document a person may read with a task they run is the
-    lead's call.
+    holder's, so its `doWork` is run by the pool, with or without the network (browser-run checks
+    41 and 42). The site's Repos do not carry the pool's ephemeral messages between tabs: those
+    reach another tab only on the task system's own BroadcastChannel, so what listens there with
+    `local: false` hears no pool. Waits on something that needs them.
+  - *A frozen holder that held the site's database.* On the stand-in page, when the holder tab is
+    frozen holding the database the two tabs' site Repos share, the other tab's site Repo saves
+    nothing until it resumes, and its `doWork` waits with it (`ask` saves the task before listing
+    it; browser-run `--lifetimes` check 34). DevTools' freeze may hold a transaction a browser's
+    own freezing would not. Waits on the lead's call.
+  - *Not shown on the deployed site* (keyhive's Repo) with no network by a probe: only on a
+    stand-in page and in unit tests.
   - *A Node host has none.* Its threads' Repos have directories of their own and reach the asker
-    by the sync server, and a run's ending waits for the server's acknowledgement. Measured on
-    2026-11-25 (FACTS.md, "What a task writes"), that costs a run from about 0.2 s (10 KB) to
-    0.5 s (5 MB) and 1.1–1.8 s (20 MB). A MessageChannel link between the host's Repo and each
-    thread would carry it directly. Without one, a run's code on a host with no network cannot
-    open a document the host has in its storage and its thread does not: an openfoam scratch check
-    (2026-11-25) found the task document and waited on the run document it names, with
-    `findWhenThere` and with plain `find`. So a solver host restarted offline with a waiting run
-    does not run it until the network returns, which the no-network law does not allow; the link
-    would close it.
+    by the sync server. A MessageChannel between the host's Repo and each thread would carry it
+    directly; without one, a run's code on a host with no network cannot open a document the host
+    has and its thread does not, so a solver host restarted offline with a waiting run does not
+    run it until the network returns, which the no-network law does not allow.
 - **A new worker for every run.** A worker is reused after a run that ended by itself, so code one
   task leaves running shares a thread with the next. Confining task code (an opaque-origin worker in
-  a browser) requires fresh workers, and so does treating tasks as strangers to each other. Ending
-  a worker once its run has ended loses nothing it wrote (in a browser the ending waits until the
-  page's Repo has it, through the link; on a Node host, for the sync server), so this waits only on
-  confinement and on what a fresh worker costs: its start, and on a Node host its Repo's first
-  connection to the server (not measured on their own).
-- **What a stopped worker leaves behind.** In a browser, what a run worker writes crosses its link
-  to the page's Repo as it writes (in milliseconds), so a worker ended mid-run (a stopped run not
-  done within five seconds) leaves behind at most what it wrote in its last moments; the page's
-  Repo keeps the rest and sends it on (browser-run check 29). A run that is reported has had the
-  page save what it wrote (browser-run `--lifetimes` check 39), unless its log says the page could
-  not; but a tab that dies while a run goes on takes the page's Repo with it, and what that Repo
-  had not yet saved or sent stays only in the run worker's storage, and the page cannot ask a run
-  worker for it, since the gate answers the page's request for a document the worker has not named
-  as unavailable. On a
-  Node host, a thread ended before the server acknowledged what its run wrote (a stopped run, a
-  process that died, a run written offline) leaves it in that thread's storage. Either way the next
-  worker on the same storage does not send it: the Repo loads a stored document only when something
-  asks for it. Sending what a slot's storage holds when a worker starts there would close this.
-  Waits on a case that needs it; the solver packages write their run documents as they go, so a
-  lost tail is what is at risk.
+  a browser) requires fresh workers, and so does treating tasks as strangers to each other. A
+  worker ended once its run has ended has saved what it wrote, but what its Repo had not yet sent
+  waits in its storage ("Left to the Repo"). This waits on confinement, on that, and on what a
+  fresh worker costs: its start, and on a Node host its Repo's first connection to the server
+  (not measured on their own).
+- **What a stopped worker leaves behind.** A worker ended mid-run (a stopped run not done within
+  five seconds, a tab or process that died) leaves what it had not sent in its storage, and the
+  next worker on that storage does not send it ("Left to the Repo"). In a browser what a run
+  worker writes crosses its pipe as it writes (browser-run check 29), so at most its last moments.
 - **Finding queues.** A page with no document that names a queue asks its person's own queue
   (`ownQueue`). Queues one only asks of, and does not serve, have no place to be kept: the task
   storage could keep them as root keys of their own whose setting serves nothing, and tools pick
@@ -242,11 +193,6 @@ that one machine serves.
   `toolStorage = {}` when its copy of the account has none, so two devices doing so apart keep one
   map, and every other tool's storage linked in the other is lost from the account. The task
   system recovers its own (`mergeStorages`); the rest is base's to fix, and was reported.
-- **Acknowledged means equal heads.** A run waits until the page's Repo (linked) or the sync server
-  reports exactly the heads its documents have. A document that others keep changing while the run
-  waits may match only after the limit, which costs the wait and never a write. Knowing that the
-  other side's heads *include* the run's would be enough, and needs a question the Repo does not
-  yet answer cheaply.
 - **What the pool's registry exposes, for the isolation work.** A pool's workers have the
   plugin registry (README, "A pool has the plugin registry"). So plugin code of every installed
   package can be loaded by any task's code in a pool: in a browser, in a run worker of the site's

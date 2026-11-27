@@ -14,8 +14,8 @@ import { plugins } from '/dist/index.js';
 // Nothing listens here, and no document leaves this machine. This tab's Repo
 // and the pool's work from the shared database alone; each run worker's
 // Repo has a database of its own, and what a task writes through ctx.repo
-// reaches this page by the local link the pool host makes to the Repo it is
-// given (src/browser/link.ts; checks 15 and 19). A page opened with `?sync=`
+// reaches this page by the pipe the pool host makes to the Repo it is given
+// (src/browser/pool-host.ts; checks 15 and 19). A page opened with `?sync=`
 // works through that sync server too, as a site does (check 22).
 //
 // A page opened with `?site` has, besides this tab's tasks Repo, a "site"
@@ -23,7 +23,7 @@ import { plugins } from '/dist/index.js';
 // with the task system's Repos, as the site's keyhive Repo shares none. The
 // account, the task storage the provider makes, and what the background
 // components and the titlebar tool are handed are that Repo's, so the only
-// way between it and the pool is the link (checks 26 to 30). Without `?site`
+// way between it and the pool is the pipe (checks 26 to 30). Without `?site`
 // the two are one Repo, the tasks Repo. Two `?site` pages of one profile
 // are joined as the site's tabs are: their site Repos share one database
 // (`probe-site`) and one heads channel (`probe-site-heads`), and nothing else
@@ -395,6 +395,25 @@ const probe = {
     }
   },
 
+  /** How long after this call the site's Repo has `url` with `ready(doc)` true, looked at every 10 ms and asked for every 250 ms until then, up to `ms`; null if not by then. */
+  async siteWhen(url, ready, ms = 2000) {
+    const t0 = performance.now();
+    const id = parseAutomergeUrl(url).documentId;
+    let asked = -Infinity;
+    while (performance.now() - t0 < ms) {
+      const handle = site.handles[id];
+      try {
+        if (handle?.isReady?.() && ready(handle.doc())) return performance.now() - t0;
+      } catch {}
+      if (!handle?.isReady?.() && performance.now() - asked > 250) {
+        asked = performance.now();
+        site.find(url).catch(() => {});
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    return null;
+  },
+
   /** The pools heard serving own through the site's Repo alone (`served` with `local: false`), after `ms`. */
   async servedThroughSite(ms = 4000) {
     const own = await client.ownQueue(site, document.body);
@@ -413,7 +432,7 @@ const probe = {
     return { value, ms: performance.now() - t0 };
   },
 
-  /** How many network adapters the site's Repo has: one per link to a worker of this page's pool. */
+  /** How many network adapters the site's Repo has: one per pipe to a worker of this page's pool. */
   siteLinks() {
     return site.networkSubsystem.adapters.length;
   },

@@ -36,7 +36,6 @@ const ASKS = {
 
 vi.mock('./webworker-lib', () => ({
   setUpImportMap: async () => {},
-  firstAttempt: async () => {},
   getRepo: async () => ({ handles: {}, flush: async () => {}, import: () => {} }),
   pluginMirror: async (own: { type: string; id: string }[]) => {
     ownGiven = own;

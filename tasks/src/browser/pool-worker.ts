@@ -10,16 +10,12 @@
 // The page tells it once how to start, and from then on which queues to
 // serve; it answers with its status when asked, and stops when told.
 //
-// The local link (link.ts). The page hands it, in 'start', its end of a port
-// to the site's Repo, which its Repo adds as a network adapter, and the peer
-// id the page chose for it, which its Repo is made with. For each run worker
-// it starts, it makes another MessageChannel and sends the page one end
-// ('link'); the page answers with the peer id it chose for that link
-// ('link'), and only then is the run worker handed the other end with that
-// id, in its settings. It says when that run worker has ended ('unlink').
-// Before a linked run is reported, it asks the page to save the documents the
-// run wrote ('keep', answered 'kept'; executor.ts). A pool given no port
-// links none of its run workers.
+// The pipe (pool-host.ts). The page hands it, in 'start', its end of a
+// MessageChannel to the site's Repo, which its Repo takes as its network
+// adapter. For each run worker it starts, it makes another, sends the page
+// one end ('link') and hands the run worker the other in its settings; it
+// says when that run worker has ended ('unlink'). A pool given no port pipes
+// none of its run workers.
 //
 // The pool's registry (../registry-snapshot.ts). The page sends its
 // registry's snapshot ('plugins') as the pool starts and whenever it changes;
@@ -40,6 +36,7 @@ import { Pool, type Docs } from '../pool';
 import type { RepoConfig } from '../repo-config';
 import type { Snapshot } from '../registry-snapshot';
 import { getRepo, setUpImportMap } from '../webworker-lib';
+import { WORKER_PEER } from '../ids';
 import { BrowserExecutor, type RunWorkerLink } from './executor';
 
 export type ServedQueues = Record<AutomergeUrl, Acceptance>;
@@ -60,15 +57,9 @@ export type ToPoolWorker =
       /** The page's import map and base URI, which the Repo's modules and a task's bare imports resolve by. */
       importMap: unknown;
       baseURI: string;
-      /** Its end of the link to the site's Repo, when the page has one (link.ts). */
+      /** Its end of the pipe to the site's Repo, when the page has one. */
       link?: MessagePort;
-      /** With `link`: the peer id its Repo must have, which the page chose and its end of the link admits alone. */
-      peer?: string;
     }
-  /** The peer id the page chose for the run worker of link `id`; null where the page took no link (the run worker then has none). */
-  | { type: 'link'; id: number; peer: string | null }
-  /** The page has saved what the run of link `id` wrote (`keep` number `ask`), or `problem` says why not. */
-  | { type: 'kept'; ask: number; problem?: string }
   /** The queues to serve from now on, with whose code to run from each. */
   | { type: 'serve'; queues: ServedQueues }
   /** The page's registry, as it is now. */
@@ -86,12 +77,10 @@ export type FromPoolWorker =
   | { type: 'failed'; message: string }
   | { type: 'status'; busy: number }
   | { type: 'stopped' }
-  /** The page's end of a new run worker's link to the site's Repo, `id` naming it among this pool's links. */
+  /** The page's end of a new run worker's pipe to the site's Repo, `id` naming it among this pool's pipes. */
   | { type: 'link'; id: number; port: MessagePort }
-  /** The run worker of link `id` has ended. */
-  | { type: 'unlink'; id: number }
-  /** Save, in the site's Repo, these documents, which the run of link `id` wrote; answered by `kept` with the same `ask`. */
-  | { type: 'keep'; id: number; ask: number; documents: string[] };
+  /** The run worker of pipe `id` has ended. */
+  | { type: 'unlink'; id: number };
 
 const scope = self as unknown as {
   postMessage(message: FromPoolWorker, transfer?: Transferable[]): void;
@@ -100,33 +89,13 @@ const scope = self as unknown as {
 const say = (message: FromPoolWorker) => scope.postMessage(message);
 
 let links = 0;
-/** Run worker links waiting for the page to name their peer, by id. */
-const naming = new Map<number, (peer: string | null) => void>();
-let asks = 0;
-/** `keep`s waiting for the page's `kept`, by ask. */
-const keeping = new Map<number, (problem: string | null) => void>();
 
-/** A run worker's link: the page's end goes to the page now; the run worker's end, once the page has named its peer. */
+/** A run worker's pipe: the page's end goes to the page now. */
 function linkRunWorker(): RunWorkerLink {
   const id = ++links;
   const { port1, port2 } = new MessageChannel();
-  const peer = new Promise<string | null>((resolve) => naming.set(id, resolve));
   scope.postMessage({ type: 'link', id, port: port1 }, [port1]);
-  return {
-    port: port2,
-    peer,
-    keep: (documents) =>
-      new Promise<string | null>((resolve) => {
-        const ask = ++asks;
-        keeping.set(ask, resolve);
-        say({ type: 'keep', id, ask, documents });
-      }),
-    end: () => {
-      naming.get(id)?.(null);
-      naming.delete(id);
-      say({ type: 'unlink', id });
-    },
-  };
+  return { port: port2, end: () => say({ type: 'unlink', id }) };
 }
 
 let pool: Promise<Pool | null> | null = null;
@@ -164,14 +133,6 @@ scope.onmessage = ({ data }) => {
       plugins = data.snapshot;
       executor?.plugins.set({ snapshot: plugins });
       break;
-    case 'link':
-      naming.get(data.id)?.(typeof data.peer === 'string' ? data.peer : null);
-      naming.delete(data.id);
-      break;
-    case 'kept':
-      keeping.get(data.ask)?.(data.problem ?? null);
-      keeping.delete(data.ask);
-      break;
     case 'status':
       void (pool ?? Promise.resolve(null)).then((it) => say({ type: 'status', busy: it?.busy ?? 0 }));
       break;
@@ -185,9 +146,7 @@ scope.onmessage = ({ data }) => {
 async function start(settings: Extract<ToPoolWorker, { type: 'start' }>): Promise<Pool> {
   await holdForLife(WORKER_LOCK);
   await setUpImportMap(settings.importMap ?? {}, settings.baseURI);
-  // Linked, its Repo has the peer id the page chose, which is all the page's end admits.
-  const peer = settings.link && settings.peer ? settings.peer : `task-pool-${crypto.randomUUID()}`;
-  const repo = await getRepo(settings.repoConfig, peer, {}, settings.link);
+  const repo = await getRepo(settings.repoConfig, `${WORKER_PEER}pool-${crypto.randomUUID()}`, {}, settings.link);
   executor = new BrowserExecutor({
     settings: {
       repoConfig: settings.repoConfig,

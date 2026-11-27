@@ -4,7 +4,7 @@
 import { homedir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { Repo, WebSocketEndpoint, initSubduction } from '@automerge/automerge-repo-node';
+import { Repo, initSubduction } from '@automerge/automerge-repo-node';
 import { NodeFSStorageAdapter } from '@automerge/automerge-repo-storage-nodefs';
 import { resolvePackageExport } from '@inkandswitch/patchwork-filesystem';
 import type { RepoConfig } from '../repo-config';
@@ -26,62 +26,20 @@ let threadRepo: Repo | null = null;
  * A Repo for this thread: a Subduction node with a socket of its own to the
  * sync server, keeping its documents in `place.storageDir`, which no other
  * live Repo uses. On disk, so that code fetched from automerge, and documents
- * found before, are had again without the network.
- *
- * What a task's code writes reaches others only through this Repo's socket,
- * and the run worker says how a run ended only once the server has
- * acknowledged it (run-worker.ts). What a run wrote whose thread was ended
- * before that (a stopped run not done within GRACE_MS, a process that died)
- * stays in this directory, and a later thread on it does not send it: the
- * Repo loads a stored document only when something asks for it.
+ * found before, are had again without the network. What a task's code
+ * writes reaches others only through this Repo's socket.
  */
 export async function getRepo(config: RepoConfig, peerId: string, given: PlaceSettings = {}) {
   place = given;
   subduction ??= initSubduction();
   await subduction;
-  let ended = () => {};
-  const over = new Promise<void>((resolve) => (ended = resolve));
   threadRepo = new Repo({
     network: [],
-    subductionWebsocketEndpoints: [watchedEndpoint(new WebSocketEndpoint(config.syncServerUrl), ended)],
+    subductionWebsocketEndpoints: [config.syncServerUrl],
     peerId: peerId as any,
     ...(place.storageDir ? { storage: new NodeFSStorageAdapter(place.storageDir) } : {}),
   } as any);
-  threadRepo.on('subduction-connection', ({ connected }) => connected && ended());
-  attempts.set(threadRepo, over);
   return threadRepo as any;
-}
-
-/** By Repo made here, when its first attempt to reach the sync server ended. */
-const attempts = new WeakMap<object, Promise<void>>();
-
-/**
- * Resolves once the Repo's first attempt to reach its sync server has ended,
- * connected or not: a Repo that is not connected then is offline, not about
- * to connect. At once for a Repo not made here.
- */
-export function firstAttempt(repo: object): Promise<void> {
-  return attempts.get(repo) ?? Promise.resolve();
-}
-
-/**
- * The sync server's endpoint, saying `ended` when the first attempt to
- * connect through it has failed. The Repo says when it is connected; a
- * second attempt means the first ended without a connection.
- */
-function watchedEndpoint(endpoint: WebSocketEndpoint, ended: () => void) {
-  let tries = 0;
-  return {
-    url: endpoint.url,
-    connect() {
-      if (++tries > 1) {
-        ended();
-      }
-      const transport = endpoint.connect();
-      transport.catch(ended);
-      return transport;
-    },
-  };
 }
 
 /** Where code fetched from automerge is kept (see package-files.ts): what the process was started with, or a directory at home. */

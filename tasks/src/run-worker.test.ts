@@ -1,10 +1,7 @@
 // The run worker's side of a job, with its port and its platform faked: every
 // way a job can end says exactly one `done` or `threw`, after what the code
-// wrote is saved and the sync server has acknowledged it, and nothing the code
-// says after that reaches the pool. The fake Repo has the members of the real
-// ones that the run worker uses (`handles`, the 'subduction-remote-heads'
-// event with its real shape, `connectedSubductionPeerIds`,
-// `resyncSubduction`), and a private field, as the real Repo's methods have.
+// wrote is saved, and nothing the code says after that reaches the pool. The
+// fake Repo has a private field, as the real Repo's methods have.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FromRunWorker, ToRunWorker } from './run-worker';
@@ -20,18 +17,9 @@ let imported: { docId: string; bytes: Uint8Array }[];
 /** What each save named: its documents, or 'all'. */
 let flushes: (string[] | 'all')[];
 let calls: string[];
-/** How the next Repo is made: whether it records every use, offers the server's reports, which peers it is connected to, and whether it is linked to a page that has everything it has. */
-let made: { recorded: boolean; event: boolean; connected: string[]; linked?: boolean };
-/** The peer id each Repo was made with. */
-let repoPeers: string[];
+/** How the next Repo is made: whether it records every use. */
+let made: { recorded: boolean };
 let theRepo: FakeRepo;
-/** What `flush` does once it has saved (the same-tick case schedules a marker). */
-let afterFlush: () => void;
-/** When the Repo's first attempt to reach its server ends; `connectNow` ends it. */
-let firstAttemptOver: Promise<void>;
-let connectNow: () => void;
-
-const SERVER = 'server-peer';
 
 class FakeHandle {
   #n = 1;
@@ -52,53 +40,16 @@ class FakeHandle {
   change() {
     this.headsNow = [`${this.documentId}@${++this.#n}`];
   }
-  /** What the page last said it has: everything, on a linked Repo (see `made.linked`). */
-  getSyncInfo(storageId: string) {
-    return storageId === 'page-storage' ? { lastHeads: this.headsNow } : undefined;
-  }
 }
 
 class FakeRepo {
   /** Read by its methods, so that one called with any other `this` throws. */
   #own = 'the real Repo';
   byId: Record<string, FakeHandle> = {};
-  listeners = new Map<string, Set<(event: any) => void>>();
-  resynced: string[] = [];
-  peersAsked = 0;
   /** Each find answers with the next of these: a handle, or a rejection; the last repeats. */
   answers: (FakeHandle | Error)[] = [new Error('Document is unavailable')];
   finds = 0;
-  declare on?: (name: string, listener: (event: any) => void) => void;
-  declare off?: (name: string, listener: (event: any) => void) => void;
-  declare connectedSubductionPeerIds?: () => Promise<string[]>;
-  declare resyncSubduction?: (documentId: string) => void;
 
-  declare networkSubsystem?: { adapters: unknown[] };
-  peers: string[] = [];
-  getStorageIdOfPeer(peer: string) {
-    return peer === 'page' ? 'page-storage' : undefined;
-  }
-
-  constructor(event: boolean) {
-    if (made.linked) {
-      this.networkSubsystem = { adapters: [{}] };
-      this.peers = ['page'];
-    }
-    if (event) {
-      this.on = (name, listener) => {
-        if (!this.listeners.has(name)) {
-          this.listeners.set(name, new Set());
-        }
-        this.listeners.get(name)!.add(listener);
-      };
-      this.off = (name, listener) => void this.listeners.get(name)?.delete(listener);
-      this.connectedSubductionPeerIds = async () => {
-        this.peersAsked++;
-        return made.connected;
-      };
-      this.resyncSubduction = (documentId) => void this.resynced.push(documentId);
-    }
-  }
   get handles() {
     return { ...this.byId };
   }
@@ -112,7 +63,6 @@ class FakeRepo {
     if (flushFails) {
       throw new Error('disk full');
     }
-    afterFlush();
   }
   create(value: unknown = {}) {
     const id = `doc${Object.keys(this.byId).length + 1}`;
@@ -134,27 +84,19 @@ class FakeRepo {
   findInside(url: string) {
     return this.find(url);
   }
-  /** What the sync server says: the real event's shape. */
-  report(handle: FakeHandle, storageId = SERVER) {
-    for (const listener of this.listeners.get('subduction-remote-heads') ?? []) {
-      listener({ documentId: handle.documentId, storageId, heads: [...handle.heads()], timestamp: Date.now() });
-    }
-  }
 }
 
 vi.mock('./webworker-lib', () => ({
   setUpImportMap: async () => {},
-  firstAttempt: () => firstAttemptOver,
-  getRepo: async (_config: unknown, peerId: string) => {
-    repoPeers.push(peerId);
+  getRepo: async () => {
     if (repoFails) {
       throw new Error('no repo here');
     }
-    theRepo = new FakeRepo(made.event);
+    theRepo = new FakeRepo();
     if (!made.recorded) {
       return theRepo;
     }
-    // Records every use: the run worker may look at what the Repo can say, import the task, flush, and read heads.
+    // Records every use: the run worker imports the task and flushes.
     return new Proxy(theRepo, {
       get(target, name) {
         calls.push(String(name));
@@ -172,7 +114,7 @@ vi.mock('./webworker-lib', () => ({
   },
 }));
 
-const { serve, REACH_LIMIT_MS, RESYNC_EVERY_MS, staysHere, notReached } = await import('./run-worker');
+const { serve } = await import('./run-worker');
 
 const job = (importUrl: string): Job => ({
   taskUrl: 'automerge:2KYqboWHPS5rvWsheoLnHgFvE7ou' as Job['taskUrl'],
@@ -199,7 +141,6 @@ function start() {
 const settings: ToRunWorker = { type: 'settings', settings: { repoConfig: { syncServerUrl: 'wss://nowhere.invalid' } } };
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 const endings = () => said.filter((m) => m.type === 'done' || m.type === 'threw');
-const logs = () => said.filter((m) => m.type === 'log').map((m) => (m as { message: string }).message);
 
 beforeEach(() => {
   events = [];
@@ -210,11 +151,7 @@ beforeEach(() => {
   imported = [];
   flushes = [];
   calls = [];
-  made = { recorded: false, event: true, connected: [SERVER] };
-  repoPeers = [];
-  afterFlush = () => {};
-  firstAttemptOver = Promise.resolve();
-  connectNow = () => {};
+  made = { recorded: false };
 });
 
 afterEach(() => {
@@ -235,7 +172,7 @@ describe('a run worker', () => {
     tell({ type: 'job', job: job('ok') });
     await settle();
     expect(seen).toEqual({ self: true, input: { n: 1 }, run: 'run-1', key: 'k', taskUrl: job('ok').taskUrl });
-    expect(events).toEqual(['done']);
+    expect(events).toEqual(['flush', 'done']);
     expect(said).toEqual([{ type: 'done', result: { doubled: 2 } }]);
   });
 
@@ -248,32 +185,22 @@ describe('a run worker', () => {
     tell({ type: 'job', job: job('ok'), task: bytes });
     await settle();
     expect(imported).toEqual([{ docId: '2KYqboWHPS5rvWsheoLnHgFvE7ou', bytes }]);
-    // `then` is the promise machinery asking whether the Repo is itself a
-    // promise; `on` and the two methods beside it are looked at once, to hear
-    // the server's reports for the Repo's whole life; `handles` gives the
-    // heads before and after the code ran; `networkSubsystem` says whether
-    // it is linked to a page (it has an adapter). Code that wrote nothing has
-    // nothing saved.
-    expect(new Set(calls)).toEqual(
-      new Set(['then', 'on', 'connectedSubductionPeerIds', 'resyncSubduction', 'import', 'handles', 'networkSubsystem']),
-    );
-    expect(theRepo.peersAsked).toBe(0);
+    // `then` is the promise machinery asking whether the Repo is itself a promise.
+    expect(new Set(calls)).toEqual(new Set(['then', 'import', 'flush']));
   });
 
   // Each way the code can fail ends in one `threw`, never in silence, and
-  // after the save of what it may have written: everything, when the code
-  // was never called and so what changed cannot be told; nothing, when it
-  // was called and wrote nothing.
-  const failures: [string, unknown, RegExp, (string[] | 'all')[]][] = [
-    ['code that will not import', undefined, /cannot find/, ['all']],
-    ['a module with no default export', { other: () => 1 }, /no default export/, ['all']],
-    ['a default export that is not a function', { default: 42 }, /no default export/, ['all']],
-    ['a synchronous throw', { default: () => { throw new Error('sync boom'); } }, /sync boom/, []],
-    ['a rejected promise', { default: async () => { throw new Error('async boom'); } }, /async boom/, []],
-    ['a thrown non-error', { default: () => { throw null; } }, /null/, []],
-    ['a result that cannot cross a thread', { default: () => () => 1 }, /could not be sent/, []],
+  // after the save of what it may have written.
+  const failures: [string, unknown, RegExp][] = [
+    ['code that will not import', undefined, /cannot find/],
+    ['a module with no default export', { other: () => 1 }, /no default export/],
+    ['a default export that is not a function', { default: 42 }, /no default export/],
+    ['a synchronous throw', { default: () => { throw new Error('sync boom'); } }, /sync boom/],
+    ['a rejected promise', { default: async () => { throw new Error('async boom'); } }, /async boom/],
+    ['a thrown non-error', { default: () => { throw null; } }, /null/],
+    ['a result that cannot cross a thread', { default: () => () => 1 }, /could not be sent/],
   ];
-  for (const [what, module, message, saved] of failures) {
+  for (const [what, module, message] of failures) {
     it(`says threw, once, for ${what}`, async () => {
       if (module !== undefined) {
         modules.it = module;
@@ -285,8 +212,7 @@ describe('a run worker', () => {
       expect(endings()).toHaveLength(1);
       expect(endings()[0].type).toBe('threw');
       expect((endings()[0] as { message: string }).message).toMatch(message);
-      expect(flushes).toEqual(saved);
-      expect(events.filter((it) => it === 'flush' || it === 'threw')).toEqual([...saved.map(() => 'flush'), 'threw']);
+      expect(events.filter((it) => it === 'flush' || it === 'threw')).toEqual(['flush', 'threw']);
     });
   }
 
@@ -580,569 +506,25 @@ describe('ctx.settled, as a checker attacks it', () => {
   });
 });
 
-describe('a run ends only once what it wrote has reached the sync server', () => {
-  /** Code that writes `count` new documents and returns their ids. */
-  const writes = (count: number) => ({
-    default: (_: unknown, ctx: any) => Array.from({ length: count }, () => ctx.repo.create({ x: 1 }).documentId),
-  });
-  const handle = (id: string) => theRepo.byId[id];
-
-  it('says done only after the server reports the heads of the document the code changed', async () => {
-    modules.w = writes(1);
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('w') });
-    await settle();
-    expect(endings()).toEqual([]);
-    theRepo.report(handle('doc1'));
-    await settle();
-    expect(endings()).toEqual([{ type: 'done', result: ['doc1'] }]);
-    expect(logs()).toEqual([]);
-  });
-
-  it('of two changed documents, waits for both', async () => {
-    modules.w = writes(2);
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('w') });
-    await settle();
-    theRepo.report(handle('doc1'));
-    await settle();
-    expect(endings()).toEqual([]);
-    theRepo.report(handle('doc2'));
-    await settle();
-    expect(endings()).toEqual([{ type: 'done', result: ['doc1', 'doc2'] }]);
-  });
-
-  it('counts a report that came before the code returned', async () => {
-    modules.w = {
-      default: (_: unknown, ctx: any) => {
-        const made = ctx.repo.create({});
-        theRepo.report(made);
-        return 'early report';
-      },
-    };
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('w') });
-    await settle();
-    expect(endings()).toEqual([{ type: 'done', result: 'early report' }]);
-  });
-
-  it('waits for the latest heads when they change again while it waits', async () => {
-    modules.w = writes(1);
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('w') });
-    await settle();
-    // code that went on after returning changes it again, and then the
-    // server reports the heads from before that change
-    handle('doc1').change();
-    theRepo.report(new FakeHandle('doc1', {}, ['doc1@1']));
-    await settle();
-    expect(endings()).toEqual([]);
-    theRepo.report(handle('doc1'));
-    await settle();
-    expect(endings()).toEqual([{ type: 'done', result: ['doc1'] }]);
-  });
-
-  it('does not count a report from a peer it is not connected to', async () => {
-    modules.w = writes(1);
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('w') });
-    await settle();
-    theRepo.report(handle('doc1'), 'a-peer-gossiped-about');
-    await settle();
-    expect(endings()).toEqual([]);
-    theRepo.report(handle('doc1'));
-    await settle();
-    expect(endings()).toHaveLength(1);
-  });
-
-  it('waits when the code threw, too', async () => {
-    modules.w = {
-      default: (_: unknown, ctx: any) => {
-        ctx.repo.create({ half: 'done' });
-        throw new Error('gave up');
-      },
-    };
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('w') });
-    await settle();
-    expect(endings()).toEqual([]);
-    theRepo.report(handle('doc1'));
-    await settle();
-    expect(endings()).toEqual([{ type: 'threw', message: 'gave up' }]);
-  });
-
-  it('waits when the run was stopped, and then says how it ended', async () => {
-    // a solver writes "cancelled" into its run document when told to stop
-    modules.w = {
-      default: (_: unknown, ctx: any) => {
-        const run = ctx.repo.create({ status: 'running' });
-        return new Promise((resolve) =>
-          ctx.signal.addEventListener('abort', () => {
-            run.change();
-            resolve('stopped');
-          }),
-        );
-      },
-    };
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('w') });
-    await settle();
-    theRepo.report(handle('doc1')); // the "running" heads reach the server
-    tell({ type: 'abort', reason: 'cancelled' });
-    await settle();
-    expect(endings()).toEqual([]);
-    theRepo.report(handle('doc1')); // and the "cancelled" heads
-    await settle();
-    expect(endings()).toEqual([{ type: 'done', result: 'stopped' }]);
-  });
-
-  it('with no report, says so in the log and how it ended after REACH_LIMIT_MS, asking again every RESYNC_EVERY_MS', async () => {
-    vi.useFakeTimers();
-    modules.w = writes(2);
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('w') });
-    await vi.advanceTimersByTimeAsync(0);
-    theRepo.report(handle('doc2'));
-    await vi.advanceTimersByTimeAsync(RESYNC_EVERY_MS);
-    expect(theRepo.resynced).toEqual(['doc1']);
-    await vi.advanceTimersByTimeAsync(REACH_LIMIT_MS - RESYNC_EVERY_MS - 1);
-    expect(endings()).toEqual([]);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(theRepo.resynced).toEqual(['doc1', 'doc1']);
-    expect(logs()).toEqual([notReached(1, 2, 'made by this run: doc1…')]);
-    expect(endings()).toEqual([{ type: 'done', result: ['doc1', 'doc2'] }]);
-    expect(said.at(-2)).toEqual({ type: 'log', message: notReached(1, 2, 'made by this run: doc1…') });
-  });
-
-  it('leaves no timer or interval behind once it has said how a run ended, by a report or at the limit, and the next job waits afresh', async () => {
-    vi.useFakeTimers();
-    modules.w = writes(1);
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('w') });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(vi.getTimerCount()).toBe(3); // the limit, looking again, asking again
-    theRepo.report(handle('doc1'));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(endings()).toEqual([{ type: 'done', result: ['doc1'] }]);
-    expect(vi.getTimerCount()).toBe(0);
-
-    said = [];
-    tell({ type: 'job', job: { ...job('w'), runId: 'run-2' } });
-    await vi.advanceTimersByTimeAsync(REACH_LIMIT_MS);
-    expect(said).toEqual([
-      { type: 'log', message: notReached(1, 1, 'made by this run: doc2…') },
-      { type: 'done', result: ['doc2'] },
-    ]);
-    expect(vi.getTimerCount()).toBe(0);
-    // the one listener for the server's reports is the Repo's, kept for its life
-    expect(theRepo.listeners.get('subduction-remote-heads')?.size).toBe(1);
-  });
-
-  it('when not connected to a server, waits for nothing and says once that it stays here', async () => {
-    made.connected = [];
-    modules.w = writes(3);
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('w') });
-    await settle();
-    expect(said).toEqual([
-      { type: 'log', message: staysHere(3, 'made by this run: doc1…, doc2…, doc3…') },
-      { type: 'done', result: ['doc1', 'doc2', 'doc3'] },
-    ]);
-  });
-
-  it('when its first attempt to connect is still going, waits for it and then for the report', async () => {
-    made.connected = [];
-    firstAttemptOver = new Promise((resolve) => (connectNow = resolve));
-    modules.w = writes(1);
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('w') });
-    await settle();
-    expect(said).toEqual([]);
-    made.connected = [SERVER];
-    connectNow();
-    await settle();
-    expect(said).toEqual([]);
-    theRepo.report(handle('doc1'));
-    await settle();
-    expect(said).toEqual([{ type: 'done', result: ['doc1'] }]);
-  });
-
-  it('when its first attempt to connect ends without a connection, says once that it stays here', async () => {
-    made.connected = [];
-    firstAttemptOver = new Promise((resolve) => (connectNow = resolve));
-    modules.w = writes(1);
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('w') });
-    await settle();
-    connectNow();
-    await settle();
-    expect(said).toEqual([
-      { type: 'log', message: staysHere(1, 'made by this run: doc1…') },
-      { type: 'done', result: ['doc1'] },
-    ]);
-  });
-
-  it('when its first attempt to connect never ends, says after REACH_LIMIT_MS that it stays here', async () => {
-    vi.useFakeTimers();
-    made.connected = [];
-    firstAttemptOver = new Promise(() => {});
-    modules.w = writes(1);
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('w') });
-    await vi.advanceTimersByTimeAsync(REACH_LIMIT_MS - 1);
-    expect(said).toEqual([]);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(said).toEqual([
-      { type: 'log', message: staysHere(1, 'made by this run: doc1…') },
-      { type: 'done', result: ['doc1'] },
-    ]);
-  });
-
-  it('when the Repo cannot say what the server holds, waits for nothing and says once that it stays here', async () => {
-    made.event = false;
-    modules.w = writes(2);
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('w') });
-    await settle();
-    expect(said).toEqual([
-      { type: 'log', message: staysHere(2, 'made by this run: doc1…, doc2…') },
-      { type: 'done', result: ['doc1', 'doc2'] },
-    ]);
-  });
-
-  it("does not wait for the task's own document", async () => {
-    modules.w = {
-      default: (_: unknown, ctx: any) => {
-        theRepo.byId['2KYqboWHPS5rvWsheoLnHgFvE7ou'].change();
-        return 'own only';
-      },
-    };
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('w'), task: new Uint8Array([1]) });
-    await settle();
-    expect(said).toEqual([{ type: 'done', result: 'own only' }]);
-    expect(theRepo.peersAsked).toBe(0);
-  });
-
-  it('does not wait for a document that only changed before the code was called', async () => {
-    modules.w = writes(1);
-    modules.nothing = { default: () => 'idle' };
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('w') });
-    await settle();
-    theRepo.report(handle('doc1'));
-    await settle();
-    said = [];
-    tell({ type: 'job', job: { ...job('nothing'), runId: 'run-2' } });
-    await settle();
-    expect(said).toEqual([{ type: 'done', result: 'idle' }]);
-  });
-
-  it('a run that changes nothing saves nothing and says done in the same tick its code returns, asking nothing of the server', async () => {
-    modules.ok = {
-      default: () => {
-        setTimeout(() => events.push('next tick'), 0);
-        return 'nothing written';
-      },
-    };
+describe('a run saves what its code wrote', () => {
+  it('saves once, after the code returns and before it says done', async () => {
+    modules.ok = { default: (_: unknown, ctx: any) => ctx.repo.create({ x: 1 }).documentId };
     const tell = start();
     tell(settings);
     tell({ type: 'job', job: job('ok'), task: new Uint8Array([1]) });
     await settle();
-    expect(events).toEqual(['done', 'next tick']);
-    expect(theRepo.peersAsked).toBe(0);
-  });
-});
-
-// What a run wrote
-//
-// A document counts as written by a run only if the run made it, or its
-// heads at the run's end differ from its heads when the run first had it
-// (run-worker.ts). The cases: a document found and only read; found and
-// changed; found at heads others moved on meanwhile; one that came into the
-// Repo without the code having it; one the code took from `handles`; one
-// made by each way of making; and the log line at the limit, by kind.
-
-describe('the words for what stays on this machine', () => {
-  it('say one document as one and several as several', () => {
-    expect(staysHere(1, 'made by this run: doc1…')).toContain('(1 document: made by this run: doc1…)');
-    expect(staysHere(2)).toContain('(2 documents)');
-  });
-});
-
-describe('what a run wrote', () => {
-  const findable = (id: string) => new FakeHandle(id);
-  /** Code that finds `urls` through ctx.repo and then runs `then` with their handles. */
-  const finds = (urls: string[], then: (handles: FakeHandle[], ctx: any) => unknown = () => 'read') => ({
-    default: async (_: unknown, ctx: any) => {
-      const handles: FakeHandle[] = [];
-      for (const url of urls) handles.push(await ctx.repo.find(url));
-      return then(handles, ctx);
-    },
-  });
-  /** Makes the next finds answer with `handles`, each put in the Repo's handles as it is found. */
-  const answering = (...handles: FakeHandle[]) => {
-    theRepo.answers = handles;
-    const find = theRepo.find.bind(theRepo);
-    theRepo.find = async (url: string) => {
-      const found = (await find(url)) as FakeHandle;
-      theRepo.byId[found.documentId] = found;
-      return found;
-    };
-  };
-  /** A run worker, set up, whose job `m` runs `module`. */
-  const run = async (module: unknown) => {
-    modules.m = module;
-    const tell = start();
-    tell(settings);
-    await settle();
-    return tell;
-  };
-
-  it('a document the code only read is not written: nothing saved, nothing waited for, nothing asked of the server', async () => {
-    const tell = await run(finds(['automerge:read1', 'automerge:read2']));
-    answering(findable('read1'), findable('read2'));
-    tell({ type: 'job', job: job('m') });
-    await settle();
-    expect(endings()).toEqual([{ type: 'done', result: 'read' }]);
-    expect(flushes).toEqual([]);
-    expect(theRepo.peersAsked).toBe(0);
-    expect(logs()).toEqual([]);
-  });
-
-  it('a document found and changed is written: saved, and waited for until the server reports it', async () => {
-    const tell = await run(finds(['automerge:read1', 'automerge:changed'], ([, changed]) => (changed.change(), 'changed one')));
-    answering(findable('read1'), findable('changed'));
-    tell({ type: 'job', job: job('m') });
-    await settle();
-    expect(flushes).toEqual([['changed']]);
-    expect(endings()).toEqual([]);
-    theRepo.report(theRepo.byId.changed);
-    await settle();
-    expect(endings()).toEqual([{ type: 'done', result: 'changed one' }]);
-  });
-
-  it('heads it was found at, not the empty heads of before it was found: a document others moved on before the code had it is not written', async () => {
-    const found = findable('moved');
-    found.change(); // others' change, before the run had it
-    const tell = await run(finds(['automerge:moved']));
-    answering(found);
-    tell({ type: 'job', job: job('m') });
-    await settle();
-    expect(endings()).toEqual([{ type: 'done', result: 'read' }]);
-  });
-
-  it('a document that came into the Repo without the code having it (the Repo\'s own workings) is not written, changed or not', async () => {
-    const tell = await run({
-      default: () => {
-        const ghost = new FakeHandle('ghost');
-        theRepo.byId.ghost = ghost;
-        ghost.change();
-        return 'left alone';
-      },
-    });
-    tell({ type: 'job', job: job('m') });
-    await settle();
-    expect(endings()).toEqual([{ type: 'done', result: 'left alone' }]);
-    expect(flushes).toEqual([]);
-  });
-
-  it('a document the code took from `handles` is the run\'s from then: changed after, it is written', async () => {
-    const tell = await run({
-      default: (_: unknown, ctx: any) => {
-        theRepo.byId.there = new FakeHandle('there');
-        ctx.repo.handles.there.change();
-        return 'took it';
-      },
-    });
-    tell({ type: 'job', job: job('m') });
-    await settle();
-    expect(flushes).toEqual([['there']]);
-    theRepo.report(theRepo.byId.there);
-    await settle();
-    expect(endings()).toEqual([{ type: 'done', result: 'took it' }]);
-  });
-
-  it('each way of making a document makes it the run\'s, whatever its heads: create, create2, clone and import', async () => {
-    let n = 0;
-    const handleFor = () => (theRepo.byId[`made${++n}`] = new FakeHandle(`made${n}`));
-    const tell = await run({
-      default: async (_: unknown, ctx: any) => {
-        Object.assign(theRepo, {
-          create2: async () => handleFor(),
-          clone: () => handleFor(),
-          import: (_bytes: Uint8Array, args?: { docId?: string }) => (theRepo.byId[args!.docId!] = new FakeHandle(args!.docId!), undefined),
-        });
-        ctx.repo.create({});
-        await ctx.repo.create2();
-        ctx.repo.clone(theRepo.byId.made1);
-        ctx.repo.import(new Uint8Array([1]), { docId: 'imported' });
-        return 'made four';
-      },
-    });
-    tell({ type: 'job', job: job('m') });
-    await settle();
-    expect(flushes).toEqual([['doc1', 'made1', 'made2', 'imported']]);
-  });
-
-  it('at the limit, the log line names how many are left and of what kind, by the start of each id', async () => {
-    const tell = await run(
-      finds(['automerge:sessionDocument'], ([session], ctx) => {
-        session.change();
-        ctx.repo.create({});
-        return 'wrote two';
-      }),
-    );
-    answering(findable('sessionDocument'));
-    vi.useFakeTimers();
-    tell({ type: 'job', job: { ...job('m'), input: { session: 'automerge:sessionDocument' } } });
-    await vi.advanceTimersByTimeAsync(REACH_LIMIT_MS);
-    expect(logs()).toEqual([notReached(2, 2, 'named in its input: sessio…; made by this run: doc2…')]);
-  });
-});
-
-// What is saved
-//
-// Before a run says how it ended, what its code wrote is saved: every
-// document whose heads differ from when the code was called, and no other.
-// The cases: nothing changed; a document made; a document changed that
-// existed before; the task's own document changed; what changed cannot be
-// told (the code was never called); and a save that fails, both when the
-// changed documents are known and when everything is saved.
-
-describe('a run saves what its code changed, and only that', () => {
-  const own = '2KYqboWHPS5rvWsheoLnHgFvE7ou';
-  /** Runs `body(ctx.repo)` as the code of a job whose task is imported, the server acknowledging whatever changed. */
-  async function runCode(body: (repo: any) => unknown, runId = 'run-1') {
-    modules[runId] = { default: (_: unknown, ctx: any) => body(ctx.repo) };
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: { ...job(runId), runId }, task: new Uint8Array([1]) });
-    await settle();
-    for (const handle of Object.values(theRepo.byId)) {
-      theRepo.report(handle);
-    }
-    await settle();
-    return tell;
-  }
-
-  it('saves nothing when the code changed nothing, the imported task included', async () => {
-    await runCode(() => 'idle');
-    expect(flushes).toEqual([]);
-    expect(endings()).toEqual([{ type: 'done', result: 'idle' }]);
-  });
-
-  it('saves the document the code made, and nothing else', async () => {
-    await runCode((repo) => repo.create({ x: 1 }).documentId);
-    expect(endings()).toEqual([{ type: 'done', result: 'doc2' }]);
-    expect(flushes).toEqual([['doc2']]);
-    expect(events).toEqual(['flush', 'done']);
-  });
-
-  it('saves the existing document the code changed, and not the one beside it that it left alone', async () => {
-    const tell = await runCode((repo) => [repo.create({}).documentId, repo.create({}).documentId]);
-    expect(endings()).toEqual([{ type: 'done', result: ['doc2', 'doc3'] }]);
-    said = [];
-    flushes = [];
-    modules.second = { default: () => (theRepo.byId.doc3.change(), 'changed doc3') };
-    tell({ type: 'job', job: { ...job('second'), runId: 'run-2' } });
-    await settle();
-    theRepo.report(theRepo.byId.doc3);
-    await settle();
-    expect(endings()).toEqual([{ type: 'done', result: 'changed doc3' }]);
-    expect(flushes).toEqual([['doc3']]);
-  });
-
-  it("saves the task's own document when the code wrote to it", async () => {
-    await runCode(() => (theRepo.byId[own].change(), 'own'));
-    expect(endings()).toEqual([{ type: 'done', result: 'own' }]);
-    expect(flushes).toEqual([[own]]);
-  });
-
-  it('saves everything when what changed cannot be told', async () => {
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('not there'), task: new Uint8Array([1]) });
-    await settle();
     expect(flushes).toEqual(['all']);
-    expect(events).toEqual(['flush', 'threw']);
+    expect(events).toEqual(['flush', 'done']);
   });
 
   it('says threw when what the code wrote cannot be saved, though it returned', async () => {
     flushFails = true;
-    await runCode((repo) => repo.create({ x: 1 }).documentId);
-    expect(flushes).toEqual([['doc2']]);
-    expect(endings()).toEqual([{ type: 'threw', message: expect.stringMatching(/could not be saved: disk full/) }]);
-  });
-
-  it('says threw when saving everything fails', async () => {
-    flushFails = true;
+    modules.ok = { default: () => 1 };
     const tell = start();
     tell(settings);
-    tell({ type: 'job', job: job('not there') });
+    tell({ type: 'job', job: job('ok') });
     await settle();
-    expect(flushes).toEqual(['all']);
     expect(endings()).toEqual([{ type: 'threw', message: expect.stringMatching(/could not be saved: disk full/) }]);
-  });
-});
-
-// Linked to a page (browser/link.ts), a run worker's Repo is made with the
-// peer id the page chose for its link, the one id the page's end admits; and
-// its ending names the documents the code wrote, which the page saves before
-// the run is reported (browser/executor.ts).
-describe('a linked run worker', () => {
-  const own = '2KYqboWHPS5rvWsheoLnHgFvE7ou';
-  const linkedSettings = (peerId?: string): ToRunWorker => {
-    const { port1, port2 } = new MessageChannel();
-    port2.close();
-    return { type: 'settings', settings: { repoConfig: { syncServerUrl: 'wss://nowhere.invalid' }, link: port1, ...(peerId ? { peerId } : {}) } };
-  };
-
-  it("makes its Repo with the peer id its settings carry with the link, and with an id of its own without a link", async () => {
-    start()(linkedSettings('task-link-chosen'));
-    start()(settings);
-    start()({ type: 'settings', settings: { repoConfig: { syncServerUrl: 'wss://nowhere.invalid' }, peerId: 'no-link-no-name' } });
-    await settle();
-    expect(repoPeers[0]).toBe('task-link-chosen');
-    expect(repoPeers[1]).toMatch(/^task-run-/);
-    expect(repoPeers[2]).toMatch(/^task-run-/);
-  });
-
-  it("names in its ending the documents the code wrote, its task's own apart; none when it wrote nothing", async () => {
-    made.linked = true;
-    modules.write = { default: (_: unknown, ctx: any) => (theRepo.byId[own].change(), ctx.repo.create({ x: 1 }).documentId) };
-    modules.idle = { default: () => 'idle' };
-    modules.boom = { default: (_: unknown, ctx: any) => { ctx.repo.create({}); throw new Error('boom'); } };
-    const tell = start();
-    tell(linkedSettings('task-link-chosen'));
-    tell({ type: 'job', job: job('write'), task: new Uint8Array([1]) });
-    await settle();
-    tell({ type: 'job', job: { ...job('idle'), runId: 'run-2' } });
-    await settle();
-    tell({ type: 'job', job: { ...job('boom'), runId: 'run-3' } });
-    await settle();
-    expect(endings()).toEqual([
-      { type: 'done', result: 'doc2', wrote: ['doc2'] },
-      { type: 'done', result: 'idle' },
-      { type: 'threw', message: 'boom', wrote: ['doc3'] },
-    ]);
-    expect(logs()).toEqual([]);
   });
 });
 

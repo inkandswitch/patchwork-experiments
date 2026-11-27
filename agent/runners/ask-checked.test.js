@@ -277,6 +277,38 @@ describe("why it never loops", () => {
     expect(client.asks.every((a) => JSON.stringify(a.input.heads) === JSON.stringify(headsOf(h)))).toBe(true)
   })
 
+  it("a task that ended before its writes reached this copy: no ask while they are on their way, and none once they arrive, at the wait's end either", async () => {
+    const repo = new Repo({ network: [] })
+    const h = repo.create()
+    h.change((d) => {
+      initSession(d, {})
+      d.burst = null
+      WORK.worker(d)
+    })
+    used.push(h.url)
+    const clock = clockOf()
+    const client = standIn()
+    const opts = optsOf(client, clock)
+    askWork(repo, h.url, opts)
+    await flush()
+    // The burst answers in its own copy; the task ends before that copy's write reaches this one.
+    const written = A.change(A.clone(h.doc()), (d) => {
+      d.turns.push(makeTurn("assistant", [textBlock("hello")]))
+    })
+    client.start()
+    client.end({ result: { outcome: "done", heads: encodeHeads(A.getHeads(written)), own: [] } })
+    await flush()
+    askWork(repo, h.url, opts)
+    await flush()
+    expect(client.asks).toHaveLength(1)
+    // The write arrives, as the Repo syncs it: the copy now has the task's heads.
+    h.update((doc) => A.merge(doc, written))
+    askWork(repo, h.url, opts)
+    await flush()
+    await clock.advance(HEADS_WAIT_MS)
+    expect(client.asks).toHaveLength(1)
+  })
+
   it("two askers on two copies with the same heads: one task, and nothing more once it ends at heads both have", async () => {
     const repoA = new Repo({ network: [] })
     const a = repoA.create()

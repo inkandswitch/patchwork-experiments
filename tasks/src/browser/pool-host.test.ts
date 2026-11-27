@@ -7,21 +7,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PoolHostStatus } from './pool-host';
 
-/** The class of the page's end of a link (link.ts), as loaded: none unless a case gives one. */
-let adapterClass: unknown = null;
-vi.mock('./link', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./link')>()),
-  linkAdapterClass: () => Promise.resolve(adapterClass),
-}));
-
 const ACCOUNT = 'automerge:tuasnaJMthhBUKLv9unCJSvTFrC';
 const STORAGE = 'automerge:3WewSgnLmFK4FjUXUCzPa939hyNe';
 const QUEUE = 'automerge:2XzPUSj52GAd1wnWv1vR5JXH94VZ';
 
-/** The site's Repo: documents by url, each changed by `change`, which its handle's listeners hear. */
+/** The site's Repo: documents by url, each changed by `change`, which its handle's listeners hear; the network adapters added to it; its share settings. */
 function standInRepo(docs: Record<string, unknown>) {
   const listeners = new Map<string, Set<() => void>>();
+  const adapters = new Set<unknown>();
   const repo = {
+    shareConfig: { announce: async () => true, access: async () => true },
+    networkSubsystem: {
+      addNetworkAdapter: (adapter: unknown) => void adapters.add(adapter),
+      removeNetworkAdapter: (adapter: unknown) => void adapters.delete(adapter),
+    },
     find: async (url: string) => {
       if (!(url in docs)) {
         throw new Error(`no ${url}`);
@@ -40,7 +39,7 @@ function standInRepo(docs: Record<string, unknown>) {
     docs[url] = doc;
     for (const listener of listeners.get(url) ?? []) listener();
   };
-  return { repo: repo as any, change };
+  return { repo: repo as any, change, adapters };
 }
 
 /** Web Locks, for one lock at a time, in the order asked; an asking aborted before it is given is dropped. */
@@ -137,7 +136,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  adapterClass = null;
   delete (navigator as any).locks;
   vi.unstubAllGlobals();
   delete (globalThis as any).accountDocHandle;
@@ -600,127 +598,47 @@ describe('a hidden page, and a newer build heard', () => {
   });
 });
 
-describe('the local link', () => {
-  /** A stand-in for the page's end of a link: the port it was made on, the peer it was made for, its gate's named documents, and whether it was ended. */
-  class StandInAdapter {
-    static made: StandInAdapter[] = [];
-    ended = false;
-    readonly gate: { named: Set<string> };
-    constructor(
-      readonly port: MessagePort,
-      readonly peer: string,
-    ) {
-      this.gate = { named: new Set() };
-      StandInAdapter.made.push(this);
-    }
-    send() {}
-    emit() {
-      return true;
-    }
-    disconnect() {
-      this.ended = true;
-    }
-  }
+describe('the pipe', () => {
+  const SERVED = { [ACCOUNT]: { toolStorage: { 'tasks-next': STORAGE } }, [STORAGE]: { [QUEUE]: true } };
 
-  /** The site's Repo, with a network subsystem that keeps the adapters added to it, and a flush that records what it was asked to save (and fails when told to). */
-  function linkableRepo(docs: Record<string, unknown>) {
-    const made = standInRepo(docs);
-    const adapters = new Set<StandInAdapter>();
-    const flushed: unknown[] = [];
-    const flush = { fails: false };
-    made.repo.flush = async (documents: unknown) => {
-      flushed.push(documents);
-      if (flush.fails) throw new Error('the disk is full');
-    };
-    made.repo.networkSubsystem = {
-      addNetworkAdapter: (adapter: StandInAdapter) => void adapters.add(adapter),
-      removeNetworkAdapter: (adapter: StandInAdapter) => {
-        adapters.delete(adapter);
-        adapter.disconnect();
-      },
-    };
-    return { ...made, adapters, flushed, flush };
-  }
-
-  beforeEach(() => {
-    StandInAdapter.made = [];
-    adapterClass = StandInAdapter;
-  });
-
-  it("links the site's Repo to the pool's worker as it starts, and to each run worker it says, until that one ends or the pool does", async () => {
+  it("joins the site's Repo to the pool's worker as it starts, and to each run worker it says, until that one ends or the pool does", async () => {
     const { startPoolHost } = await import('./pool-host');
-    const { repo, adapters } = linkableRepo({ [ACCOUNT]: { toolStorage: { 'tasks-next': STORAGE } }, [STORAGE]: { [QUEUE]: true } });
+    const { repo, adapters } = standInRepo(SERVED);
     const release = startPoolHost(repo);
     await settle();
     const worker = StandInWorker.made[0];
-    const start = worker.told.find((message) => message.type === 'start');
     // (a port is compared by identity: printing one overflows the stack)
-    expect(typeof start.link?.postMessage).toBe('function');
+    expect(typeof worker.told.find((message) => message.type === 'start').link?.postMessage).toBe('function');
     expect(adapters.size).toBe(1);
-    // the page chose the pool's peer, its end admits that one, and the worker is told it
-    expect(start.peer).toMatch(/^task-link-/);
-    expect(StandInAdapter.made[0].peer).toBe(start.peer);
     worker.say({ type: 'ready' });
-
-    const { port1, port2 } = new MessageChannel();
-    worker.say({ type: 'link', id: 1, port: port1 });
-    expect(adapters.size).toBe(2);
-    expect(StandInAdapter.made.at(-1)!.port === port1).toBe(true);
-    // the page names the run worker's peer, a fresh one, and tells the pool's worker
-    const named = worker.told.filter((message) => message.type === 'link');
-    expect(named).toEqual([{ type: 'link', id: 1, peer: StandInAdapter.made[1].peer }]);
-    expect(StandInAdapter.made[1].peer).not.toBe(start.peer);
-    const other = new MessageChannel();
-    worker.say({ type: 'link', id: 2, port: other.port1 });
+    const one = new MessageChannel();
+    const two = new MessageChannel();
+    worker.say({ type: 'link', id: 1, port: one.port1 });
+    worker.say({ type: 'link', id: 2, port: two.port1 });
     expect(adapters.size).toBe(3);
-    expect(new Set(StandInAdapter.made.map((adapter) => adapter.peer)).size).toBe(3);
     worker.say({ type: 'unlink', id: 1 });
     expect(adapters.size).toBe(2);
-    expect(StandInAdapter.made[1].ended).toBe(true);
-
-    // the pool's worker fails: every link it had leaves the Repo
     worker.say({ type: 'failed', message: 'on purpose' });
     expect(adapters.size).toBe(0);
-    expect(StandInAdapter.made.every((adapter) => adapter.ended)).toBe(true);
     release();
-    for (const port of [port2, other.port2]) port.close();
+    for (const port of [one.port2, two.port2]) port.close();
   });
 
-  it("kept before reported: a run's documents its link carried are saved in the site's Repo and listed until the sync server has them, and the pool's worker is told when, or why not", async () => {
-    localStorage.removeItem('patchwork-tasks-unsent');
+  it("the site's Repo offers a worker's Repo nothing, and every other peer what it offered before", async () => {
     const { startPoolHost } = await import('./pool-host');
-    const { repo, flushed, flush } = linkableRepo({ [ACCOUNT]: { toolStorage: { 'tasks-next': STORAGE } }, [STORAGE]: { [QUEUE]: true } });
+    const { WORKER_PEER } = await import('../ids');
+    const { repo } = standInRepo(SERVED);
     const release = startPoolHost(repo);
     await settle();
-    const worker = StandInWorker.made[0];
-    worker.say({ type: 'ready' });
-    const { port1, port2 } = new MessageChannel();
-    worker.say({ type: 'link', id: 1, port: port1 });
-    StandInAdapter.made[1].gate.named.add('carried');
-    const kept = () => worker.told.filter((message) => message.type === 'kept');
-
-    worker.say({ type: 'keep', id: 1, ask: 1, documents: ['carried', 'not-carried'] });
-    await settle();
-    expect(flushed).toEqual([['carried']]);
-    expect(kept()).toEqual([{ type: 'kept', ask: 1 }]);
-    expect(Object.keys(JSON.parse(localStorage.getItem('patchwork-tasks-unsent') ?? '{}'))).toEqual(['carried']);
-
-    flush.fails = true;
-    worker.say({ type: 'keep', id: 1, ask: 2, documents: ['carried'] });
-    await settle();
-    expect(kept().at(-1)).toEqual({ type: 'kept', ask: 2, problem: 'the disk is full' });
-
-    worker.say({ type: 'unlink', id: 1 });
-    worker.say({ type: 'keep', id: 1, ask: 3, documents: ['carried'] });
-    await settle();
-    expect(kept().at(-1)).toMatchObject({ type: 'kept', ask: 3, problem: expect.stringMatching(/ended/) });
+    expect(await repo.shareConfig.announce(`${WORKER_PEER}run-1`, 'doc')).toBe(false);
+    expect(await repo.shareConfig.announce('someone-else', 'doc')).toBe(true);
+    expect(await repo.shareConfig.access(`${WORKER_PEER}run-1`, 'doc')).toBe(true);
     release();
-    port2.close();
   });
 
-  it('a link said after the pool was ended is closed, not added', async () => {
+  it('a pipe said after the pool was ended is closed, not added', async () => {
     const { startPoolHost } = await import('./pool-host');
-    const { repo, adapters } = linkableRepo({ [ACCOUNT]: { toolStorage: { 'tasks-next': STORAGE } }, [STORAGE]: { [QUEUE]: true } });
+    const { repo, adapters } = standInRepo(SERVED);
     const release = startPoolHost(repo);
     await settle();
     const worker = StandInWorker.made[0];
@@ -732,14 +650,5 @@ describe('the local link', () => {
     expect(adapters.size).toBe(0);
     release();
     port2.close();
-  });
-
-  it("a Repo with no network subsystem, or no adapter to be had: the pool starts with no link, as before", async () => {
-    const { startPoolHost } = await import('./pool-host');
-    const { repo } = standInRepo({ [ACCOUNT]: { toolStorage: { 'tasks-next': STORAGE } }, [STORAGE]: { [QUEUE]: true } });
-    const release = startPoolHost(repo);
-    await settle();
-    expect(StandInWorker.made[0].told.find((message) => message.type === 'start').link).toBeUndefined();
-    release();
   });
 });

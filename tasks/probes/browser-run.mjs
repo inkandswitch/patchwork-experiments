@@ -5,19 +5,19 @@
 // in the package's plugin list, and its real titlebar tool) and asks through
 // the built task client (the package's library). Task
 // code comes from data: URLs and from a file served here; the queue accepts
-// any code. No sync server is reached but by checks 24, 22, 26 to 30 and 40
-// to 42: the pages' Repos and the pool's work from the profile's shared database, and
+// any code. No sync server is reached but by checks 24, 22, 26 to 30, 41
+// and 42: the pages' Repos and the pool's work from the profile's shared database, and
 // each run worker's from a database of its own. What a task writes through
-// ctx.repo reaches the page by the local link the pool host makes to the Repo
-// the page hands it (src/browser/link.ts; checks 15 and 19). Checks 26 to 30
+// ctx.repo reaches the page by the pipe the pool host makes to the Repo the
+// page hands it (src/browser/pool-host.ts; checks 15 and 19). Checks 26 to 30
 // run in a browser context whose pages have a site Repo of their own, sharing
 // no storage with the task system's, so that only the link joins it to the
 // pool: a tool's `doWork` through it is run by the pool (26), what the task
-// writes is there when doWork resolves (27), liveness and progress arrive
+// writes arrives there within 2 s (27), liveness and progress arrive
 // (28), a run worker ended mid-write leaves that Repo working (29); a
 // second page of the profile that does not hold the pool has its doWork run
-// by the first page's pool, with the result and what the task wrote in its
-// own site Repo when doWork resolves (41), and follows and stops its work
+// by the first page's pool, with the result, and what the task wrote reaches
+// its own site Repo within 2 s (41), and follows and stops its work
 // with watchWork and stopWork (42); and the pool handed over to that page
 // links its Repo and runs its next doWork (30); with --no-network they show
 // this with no network. The two pages' site Repos are joined as the
@@ -27,12 +27,7 @@
 // The pool's messages reach the second page only on the task system's own
 // BroadcastChannel. What the stand-in cannot show is the
 // site's own Repo (keyhive's): its are plain Repos of the version the site's
-// import map names. Check 40, in a context of its
-// own like 26's, shows what a task wrote cut off from the network reaching
-// the sync server, though its page closed first, once a new page of the
-// profile opens with the network, as a Node Repo of this process's (another
-// device) finds it (unsent.ts); with --no-network, only that the new page
-// lists it and has it. Check 22 runs probes/append-task.js, the task
+// import map names. Check 22 runs probes/append-task.js, the task
 // append-run.mjs runs on a Node host, unchanged, in a browser context of its
 // own whose page and pool work through the real sync server (`--sync`, or
 // PATCHWORK_SYNC, or Ink & Switch's), and watches the text it appends to grow
@@ -42,7 +37,7 @@
 //   (in tasks/, after `pnpm build`)
 //   /Users/pvh/dev/pwx-one/tools/slot.sh chrome -- node probes/browser-run.mjs [--show] [--no-network] [--lifetimes]
 //
-// --lifetimes runs checks 31 to 39 as well (linkLifetimes and linkHeals say
+// --lifetimes runs checks 31 to 38 as well (linkLifetimes and linkHeals say
 // what each shows), about ten minutes more; 37 and 38 need the sync server
 // and are skipped with --no-network, saying so.
 //
@@ -79,7 +74,7 @@
 // background component until 21 does, and then lets it go. Check 23 runs
 // on tab A's pool, after 19. Checks 24 and 22 run next, in a browser
 // context of their own, in that order, then 26 to 29, 41, 42 and 30 in
-// another, 40 in another, 43 to 50 in another, and 25 last, over every
+// another, 43 to 50 in another, and 25 last, over every
 // request seen.
 //
 // Checks 43 to 47 are about the pool's plugin registry: the page's registry
@@ -119,7 +114,7 @@ import { extname } from "node:path";
 import { sleep } from "./cdp.mjs";
 import { guardChrome, killChrome } from "./chrome-guard.mjs";
 import { BEAT_MS, LISTEN_MS } from "../src/task-rules.js";
-import { Repo as NodeRepo, initSubduction as initNodeSubduction, encodeHeads, generateAutomergeUrl, parseAutomergeUrl, stringifyAutomergeUrl } from "@automerge/automerge-repo-node";
+import { encodeHeads, generateAutomergeUrl, parseAutomergeUrl, stringifyAutomergeUrl } from "@automerge/automerge-repo-node";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG = resolve(HERE, "..");
@@ -199,7 +194,7 @@ const SYNC_SERVER = (() => {
   const at = process.argv.indexOf("--sync");
   return (at > 0 && process.argv[at + 1]) || process.env.PATCHWORK_SYNC || "wss://subduction.sync.inkandswitch.com";
 })();
-// --lifetimes: checks 31 to 37 as well (see linkLifetimes and linkHeals)
+// --lifetimes: checks 31 to 38 as well (see linkLifetimes and linkHeals)
 const LIFETIMES = process.argv.includes("--lifetimes");
 
 // Check 37 cuts one page off the network and mends it again with DevTools'
@@ -541,6 +536,16 @@ const ticked = (got, count, liveRunWorkers) =>
 const tickedSaid = (got, liveRunWorkers) =>
   `doWork ${got.error ? `rejected ${J(got.error)}` : "resolved"} in ${got.ms.toFixed(0)} ms; the worker's ${got.seen} changes reached the page (${spread(got.lagOut)}); the page's ${got.m} reached the worker up to ${got.result?.seen} (${spread(got.result?.lagIn ?? [])}); the page then had ${got.links} links for ${liveRunWorkers} live run workers and the pool; the page was ${got.visibility}`;
 /** In a page: what its site Repo finds of `url` within `ms` (from its storage, its links or its server), or null. */
+/**
+ * As a `.then` of a page's doWork: its outcome, with how long after it
+ * resolved the site's Repo had the task's change to `doc` and the document
+ * it made, each tagged `tag` (up to 2 s; null if not by then), what it then
+ * had of each, and its pipes.
+ */
+const withWrites = (doc, tag) =>
+  `async (work) => { const changedMs = await probe.siteWhen(${J(doc)}, (d) => d.changed === ${J(tag)}); const madeMs = work.result?.made ? await probe.siteWhen(work.result.made, (d) => d.made === ${J(tag)}) : null; return { ...work, changedMs, madeMs, changed: probe.siteNow(${J(doc)}), made: work.result?.made ? probe.siteNow(work.result.made) : null, links: probe.siteLinks() }; }`;
+/** How long the writes `withWrites` waited for took to arrive. */
+const arrivedIn = (got) => `arrived ${got.changedMs === null ? "never" : `${got.changedMs?.toFixed(0)} ms`} and ${got.madeMs === null ? "never" : `${got.madeMs?.toFixed(0)} ms`} after doWork resolved`;
 const siteFinds = (url, ms = 5000) =>
   `Promise.race([probe.site.find(${J(url)}).then((h) => JSON.parse(JSON.stringify(h.doc())), (e) => ({ unavailable: String(e?.message ?? e) })), new Promise((r) => setTimeout(() => r(null), ${ms}))])`;
 
@@ -663,17 +668,17 @@ async function linkLifetimes(M, path, browserContextId) {
     check("31 two minutes of a change every 3 s, each way, through the link: none stalls, and the links are as many as before", ticked(got, 40, live), tickedSaid(got, live));
   }
 
-  // 32. A 5 MB document a task makes is in the page's Repo when doWork resolves.
+  // 32. A 5 MB document a task makes reaches the page's Repo within 10 s of doWork resolving.
   {
     const got = await M.js(
-      `probe.work(${J(BIG)}, { mb: 5 }).then((work) => { const id = work.result && work.result.slice('automerge:'.length); const h = id && probe.site.handles[id]; return { result: work.result ?? null, error: work.error ?? null, ms: work.ms, bytes: h && h.isReady() ? h.doc().blob.byteLength : null, links: probe.siteLinks() }; })`,
+      `probe.work(${J(BIG)}, { mb: 5 }).then(async (work) => { const arrivedMs = work.result ? await probe.siteWhen(work.result, (d) => d.blob?.byteLength === 5 * 1024 * 1024, 10_000) : null; return { result: work.result ?? null, error: work.error ?? null, ms: work.ms, arrivedMs, links: probe.siteLinks() }; })`,
       120_000,
     );
     const live = liveWorkers(M, /run-worker-entry/).length;
     check(
-      "32 a task makes a 5 MB document: the page's Repo has all of it when doWork resolves",
-      got.bytes === 5 * 1024 * 1024 && got.links === live + 1,
-      `doWork ${got.error ? `rejected ${J(got.error)}` : "resolved"} in ${got.ms.toFixed(0)} ms; the page then had ${got.bytes} bytes of it; ${got.links} links for ${live} live run workers and the pool`,
+      "32 a task makes a 5 MB document: the page's Repo has all of it within 10 s of doWork resolving",
+      got.arrivedMs !== null && got.links === live + 1,
+      `doWork ${got.error ? `rejected ${J(got.error)}` : "resolved"} in ${got.ms.toFixed(0)} ms; the page had all 5 MB ${got.arrivedMs === null ? "never" : `${got.arrivedMs.toFixed(0)} ms after`}; ${got.links} links for ${live} live run workers and the pool`,
     );
   }
 
@@ -701,10 +706,10 @@ async function linkLifetimes(M, path, browserContextId) {
       `(() => { const h = probe.site.create({ made: 'by H' }); window.savedAt = null; const t0 = Date.now(); probe.site.flush([h.documentId]).then(() => (window.savedAt = Date.now() - t0)); return h.url; })()`,
     );
     const savedWhileFrozen = await H.waitFor("window.savedAt !== null && String(window.savedAt)", 10_000);
-    const got = await H.js(
-      `probe.work(${J(MAKES_AND_CHANGES)}, { doc: ${J(doc)}, tag: 'thirty-four' }).then((work) => ({ result: work.result ?? null, error: work.error ?? null, ms: work.ms, changed: probe.siteNow(${J(doc)}), links: probe.siteLinks() }))`,
-      60_000,
-    ).catch((error) => ({ error: String(error.message ?? error), ms: NaN }));
+    const got = await H.js(`probe.work(${J(MAKES_AND_CHANGES)}, { doc: ${J(doc)}, tag: 'thirty-four' }).then(${withWrites(doc, "thirty-four")})`, 60_000).catch((error) => ({
+      error: String(error.message ?? error),
+      ms: NaN,
+    }));
     await send("Page.setWebLifecycleState", { state: "active" }, M.sessionId);
     const savedAfterResume = savedWhileFrozen || (await H.waitFor("window.savedAt !== null && String(window.savedAt)", 10_000));
     const mBack = await M.waitFor("probe.status()?.state === 'waiting' && probe.status().state", 15_000);
@@ -727,34 +732,23 @@ async function linkLifetimes(M, path, browserContextId) {
     const poolHere = await M.js("localStorage.getItem('patchwork-tasks-pool-id')");
     const heard = await M.js("probe.servedThroughSite(4000)");
     const doc = await M.js(`probe.siteDoc({ made: 'by M' })`);
-    const got = await M.js(
-      `probe.work(${J(MAKES_AND_CHANGES)}, { doc: ${J(doc)}, tag: 'thirty-five' }).then((work) => ({ result: work.result ?? null, error: work.error ?? null, ms: work.ms, changed: probe.siteNow(${J(doc)}), made: work.result?.made ? probe.siteNow(work.result.made) : null, links: probe.siteLinks() }))`,
-      60_000,
-    );
+    const got = await M.js(`probe.work(${J(MAKES_AND_CHANGES)}, { doc: ${J(doc)}, tag: 'thirty-five' }).then(${withWrites(doc, "thirty-five")})`, 60_000);
     const live = liveWorkers(M, /run-worker-entry/).length;
     check(
-      "35 the holder navigated away: the waiting tab takes the pool, linked to its site Repo, and its work's writes are there when doWork resolves",
+      "35 the holder navigated away: the waiting tab takes the pool, linked to its site Repo, and its work's writes reach it within 2 s",
       !!taken && got.result?.where === "worker" && got.changed?.changed === "thirty-five" && got.made?.made === "thirty-five" && got.links === live + 1,
-      `M ${taken ? "took the pool" : "did not take it"}, ${heard.some((pool) => pool.pool === poolHere) ? "heard" : "did not hear"} through its site Repo; doWork ${got.error ? `rejected ${J(got.error)}` : `gave ${J(got.result)}`} in ${got.ms.toFixed(0)} ms; M had ${J(got.changed)} and ${J(got.made)}, ${got.links} links for ${live} live run workers and the pool`,
+      `M ${taken ? "took the pool" : "did not take it"}, ${heard.some((pool) => pool.pool === poolHere) ? "heard" : "did not hear"} through its site Repo; doWork ${got.error ? `rejected ${J(got.error)}` : `gave ${J(got.result)}`} in ${got.ms.toFixed(0)} ms; M had ${J(got.changed)} and ${J(got.made)}, ${arrivedIn(got)}; ${got.links} links for ${live} live run workers and the pool`,
     );
 
-    // 36 and 39. The page reloaded, alone in its profile. Before it, a task
-    // writes a document of the page's and the page waits 2 s (settled); then
-    // a task writes another, and the page reloads the moment doWork resolves
-    // (at once), as a person might. 36: it takes the pool again, linked,
-    // has the settled write, and runs work. 39: it has the at-once write,
-    // at once or within 10 s.
+    // 36. The page reloaded, alone in its profile, 2 s after a task wrote a
+    // document of the page's: it takes the pool again, linked, has that
+    // write, and runs work.
     const settled = await M.js(`probe.siteDoc({ made: 'settled' })`);
     await M.js(`probe.work(${J(MAKES_AND_CHANGES)}, { doc: ${J(settled)}, tag: 'thirty-six' }).then((work) => work.result)`, 60_000);
     await sleep(2_000);
-    const atOnce = await M.js(`probe.siteDoc({ made: 'at once' })`);
     const loadedAt = await M.js("performance.timeOrigin");
-    const reported = await M.js(
-      `probe.work(${J(MAKES_AND_CHANGES)}, { doc: ${J(atOnce)}, tag: 'thirty-nine' }).then((work) => { const had = probe.siteNow(${J(atOnce)}); setTimeout(() => location.reload(), 0); return { result: work.result ?? null, error: work.error ?? null, had }; })`,
-      60_000,
-    );
+    await M.js("setTimeout(() => location.reload(), 0)");
     const ready = await M.waitFor(`performance.timeOrigin !== ${loadedAt} && window.ready === true`, 30_000);
-    const atOnceFirst = await M.js(siteFinds(atOnce));
     await M.js("probe.mountBackground()");
     const again = await M.waitFor("probe.status()?.state === 'running'", 30_000);
     await sleep(LISTEN_MS);
@@ -765,17 +759,6 @@ async function linkLifetimes(M, path, browserContextId) {
       "36 the page reloaded: it takes the pool again, linked to its new site Repo, has what a run wrote 2 s before, and its work runs in the pool",
       !!ready && !!again && settledThere?.changed === "thirty-six" && after.result === "worker" && after.links === liveAfter + 1,
       `ready ${!!ready}, pool ${again ? "running" : J(await M.js("probe.status()"))}; the write 2 s before the reload: ${J(settledThere)}; doWork ${after.error ? `rejected ${J(after.error)}` : `gave ${J(after.result)}`} in ${after.ms.toFixed(0)} ms; ${after.links} links for ${liveAfter} live run workers and the pool`,
-    );
-    const t0 = Date.now();
-    let atOnceLater = atOnceFirst;
-    while (atOnceLater?.changed !== "thirty-nine" && Date.now() - t0 < 10_000) {
-      await sleep(1_000);
-      atOnceLater = await M.js(`probe.site.find(${J(atOnce)}).then((h) => JSON.parse(JSON.stringify(h.doc())), () => null)`);
-    }
-    check(
-      "39 a run reported, and the page reloaded the moment doWork resolved: the reloaded page has what the run wrote",
-      reported.had?.changed === "thirty-nine" && atOnceLater?.changed === "thirty-nine",
-      `when doWork resolved the page had ${J(reported.had)}; after the reload it found ${J(atOnceFirst)}, and ${J(atOnceLater)} up to 10 s later${NO_NETWORK ? " (no network)" : ""}`,
     );
   }
 }
@@ -829,10 +812,7 @@ async function linkHeals() {
     await sleep(2_000);
     const cutControl = await P.js(`probe.siteDoc({ control: 'made cut off' })`);
     const doc = await P.js(`probe.siteDoc({ runs: 0 })`);
-    const got = await P.js(
-      `probe.work(${J(COUNTS)}, { doc: ${J(doc)}, tag: 'written offline' }).then((work) => ({ result: work.result ?? null, error: work.error ?? null, ms: work.ms, taskUrl: work.taskUrl, changed: probe.siteNow(${J(doc)}), made: work.result?.made ? probe.siteNow(work.result.made) : null }))`,
-      90_000,
-    );
+    const got = await P.js(`probe.work(${J(COUNTS)}, { doc: ${J(doc)}, tag: 'written offline' }).then(${withWrites(doc, "written offline")})`, 90_000);
     await sleep(3_000);
     const cutThere = await look(cutControl, 5_000);
 
@@ -880,139 +860,6 @@ async function linkHeals() {
   } finally {
     if (P) offlinePages.delete(P.sessionId);
     for (const id of [ctxP, ctxQ]) await send("Target.disposeBrowserContext", { browserContextId: id }).catch(() => {});
-  }
-}
-
-/**
- * What a Repo on this machine, standing for another device, finds of `url`
- * at the sync server within `ms`: a Node Repo of its own, made afresh for
- * each look so that no look is answered by an earlier "unavailable". What
- * that Repo logs is left out of this probe's output.
- */
-let nodeSubduction = null;
-async function nodeLook(url, ms = 8_000) {
-  const quiet = { log: console.log, warn: console.warn, info: console.info, debug: console.debug };
-  Object.assign(console, { log() {}, warn() {}, info() {}, debug() {} });
-  try {
-    nodeSubduction ??= initNodeSubduction();
-    await nodeSubduction;
-    const repo = new NodeRepo({ network: [], subductionWebsocketEndpoints: [SYNC_SERVER] });
-    try {
-      return await Promise.race([
-        repo.find(url).then((handle) => JSON.parse(JSON.stringify(handle.doc())), (error) => ({ unavailable: String(error?.message ?? error).slice(0, 80) })),
-        sleep(ms).then(() => null),
-      ]);
-    } finally {
-      await Promise.race([repo.shutdown?.(), sleep(2_000)]).catch(() => {});
-    }
-  } finally {
-    Object.assign(console, quiet);
-  }
-}
-
-const listedIn = (tab) => tab.js("Object.keys(JSON.parse(localStorage.getItem('patchwork-tasks-unsent') ?? '{}'))");
-
-/**
- * 40. What a task wrote with no network reaches the sync server once the
- * network is back, though the page that ran it closed first (unsent.ts).
- * A page of a context of its own (U: `?site`, named the real sync server)
- * runs its pool, and a task in a run worker; a document it made reaches the
- * server. Then U is cut off
- * (DevTools' network emulation, as check 37), a task counts its runs in that
- * document and makes one, the page makes a document of its own (not a run's,
- * so not listed: the control), and U is closed the moment doWork resolves,
- * still cut off: nothing has those documents open any more. A Node Repo on
- * the server (another device) has none of the three. A new page of the same
- * profile (V) opens with the network, as a restarted browser does: the task
- * system's list names the run's two documents; V mounts its pool, and the
- * Node Repo finds both, the count once, V's list empties, and the page's own
- * document, which nothing lists or opens, is still not at the server. With
- * --no-network, where nothing reaches the server: the list in V names both,
- * and V's site Repo has them; the rest is skipped, saying so.
- */
-async function unsentSent() {
-  const { browserContextId } = await send("Target.createBrowserContext", {});
-  const path = `/probe/index.html?site&sync=${encodeURIComponent(SYNC_SERVER)}`;
-  let U;
-  try {
-    U = await tab("U", path, browserContextId);
-    await U.js("probe.makeAccount()");
-    await U.js("probe.mountBackground()");
-    const running = await U.waitFor("probe.status()?.state === 'running'", 30_000);
-    await sleep(LISTEN_MS);
-    // a run worker started with the network: one started cut off could not load its script from here
-    const warm = await U.js(`probe.work(${J(WHERE)}).then((work) => work.result ?? work.error)`, 60_000);
-    const doc = await U.js(`probe.siteDoc({ runs: 0 })`);
-    let before = null;
-    if (!NO_NETWORK) {
-      const t0 = Date.now();
-      while (before?.runs !== 0 && Date.now() - t0 < 30_000) {
-        before = await nodeLook(doc);
-        if (before?.runs !== 0) await sleep(2_000);
-      }
-    }
-
-    await cutOff(U, true);
-    await sleep(2_000);
-    const control = await U.js(`probe.siteDoc({ control: 'made by the page, cut off' })`);
-    const got = await U.js(
-      `probe.work(${J(COUNTS)}, { doc: ${J(doc)}, tag: 'forty' }).then((work) => ({ result: work.result ?? null, error: work.error ?? null, ms: work.ms, changed: probe.siteNow(${J(doc)}), made: work.result?.made ? probe.siteNow(work.result.made) : null }))`,
-      90_000,
-    );
-    await send("Target.closeTarget", { targetId: U.targetId }).catch(() => {});
-    offlinePages.delete(U.sessionId);
-    const made = got.result?.made ?? null;
-    const ids = [doc, made].map((url) => url?.replace("automerge:", "") ?? null);
-    const wrote = got.changed?.runs === 1 && got.made?.made === "forty";
-    let cut = true;
-    let cutSaw = [];
-    if (!NO_NETWORK) {
-      cutSaw = [await nodeLook(doc, 6_000), made ? await nodeLook(made, 6_000) : null, await nodeLook(control, 6_000)];
-      cut = cutSaw[0]?.runs !== 1 && !cutSaw[1]?.made && !cutSaw[2]?.control;
-    }
-
-    // the browser restarted, with the network
-    const V = await tab("V", path, browserContextId);
-    const listedAtStart = await listedIn(V);
-    const lists = ids.every((id) => id && listedAtStart.includes(id)) && !listedAtStart.includes(control.replace("automerge:", ""));
-    const shortIds = (list) => list.map((id) => id.slice(0, 6));
-    if (NO_NETWORK) {
-      const here = await V.js(`Promise.all([${J(doc)}, ${J(made)}].map((url) => url ? probe.site.find(url).then((h) => JSON.parse(JSON.stringify(h.doc())), () => null) : null))`);
-      check(
-        "40 (no network) what a task wrote, its page closed the moment doWork resolved: a new page of the profile has the task system's list naming both documents, and its site Repo has them",
-        !!running && warm === "worker" && wrote && lists && here[0]?.runs === 1 && here[1]?.made === "forty",
-        `pool ${running ? "running" : "not running"}; doWork ${got.error ? `rejected ${J(got.error)}` : `gave ${J(got.result)}`} in ${got.ms.toFixed(0)} ms, the page had ${J(got.changed)} and ${J(got.made)}; the new page's list ${J(shortIds(listedAtStart))} (the documents ${J(shortIds(ids.filter(Boolean)))}); its site Repo had ${J(here)}`,
-      );
-      console.error(`skip the rest of 40 (another device finds them once the network is back): it needs the sync server (${SYNC_SERVER}), and --no-network reaches none`);
-      return;
-    }
-    await V.js("probe.mountBackground()");
-    const again = await V.waitFor("probe.status()?.state === 'running'", 30_000);
-    const opened = Date.now();
-    let changed = null;
-    let found = null;
-    while (Date.now() - opened < 90_000) {
-      changed = await nodeLook(doc);
-      found = made ? await nodeLook(made) : null;
-      if (changed?.runs === 1 && found?.made === "forty") break;
-      await sleep(2_000);
-    }
-    const reachedMs = Date.now() - opened;
-    let listedAfter = await listedIn(V);
-    const t1 = Date.now();
-    while (listedAfter.length > 0 && Date.now() - t1 < 30_000) {
-      await sleep(1_000);
-      listedAfter = await listedIn(V);
-    }
-    const controlLater = await nodeLook(control, 6_000);
-    check(
-      "40 what a task wrote with no network, its page closed before the network came back: a new page of the profile, with the network, sends it, another device (a Node Repo on the sync server) finds it with the count once, and the list of what to send empties; a document the page itself made cut off, which nothing lists, is still not sent",
-      before?.runs === 0 && !!running && warm === "worker" && wrote && cut && lists && !!again && changed?.runs === 1 && found?.made === "forty" && listedAfter.length === 0 && !controlLater?.control,
-      `another device found the document made online: ${J(before)}; cut off, doWork ${got.error ? `rejected ${J(got.error)}` : `gave ${J(got.result)}`} in ${got.ms.toFixed(0)} ms, the page had ${J(got.changed)} and ${J(got.made)}, and the page closed at once; then another device had ${J(cutSaw)}${cut ? "" : " (the cut did not hold)"}; the new page's list ${J(shortIds(listedAtStart))} (the run's documents ${J(shortIds(ids.filter(Boolean)))}); its pool ${again ? "running" : "not running"}, and another device found ${J(changed)} and ${J(found)} ${reachedMs} ms after the new page opened; the list then ${J(listedAfter)}; the page's own document at the server: ${J(controlLater)}`,
-    );
-  } finally {
-    if (U) offlinePages.delete(U.sessionId);
-    await send("Target.disposeBrowserContext", { browserContextId }).catch(() => {});
   }
 }
 
@@ -1092,23 +939,20 @@ try {
   }
 
   // 19. A task that writes a document through ctx.repo, with no sync server
-  // to reach (this harness's Repos point at ws://127.0.0.1:9): its run
-  // worker waits only until the page's Repo has what it wrote, through the
-  // local link (src/browser/link.ts), so the page has the document as soon
-  // as it reads the run's ending, and the run's log says nothing of it
-  // staying anywhere. Timed as check 1 is.
+  // to reach (this harness's Repos point at ws://127.0.0.1:9): the page's
+  // Repo has it within 500 ms of the run's ending, through the pipe
+  // (src/browser/pool-host.ts). Timed as check 1 is.
   {
     const times = [];
     for (let i = 0; i < 10; i++) times.push((await A.js(`probe.timeRun(${J(WRITES)}, ${J({ tag: `nineteen-${i}`, ms: 0 })})`)).ms);
     const key = await A.js(`probe.ask(${J(WRITES)}, ${J({ tag: "nineteen", ms: 0 })})`);
     await A.waitFor(stateIs(key, "succeeded", "failed", "cancelled"), 20_000);
     const last = await A.js(`probe.last(${J(key)})`);
-    const kept = last.runs.at(-1)?.logs ?? [];
     const pageHas = typeof last.result === "string" ? await A.js(`probe.has(${J(last.result)}, 500)`) : false;
     check(
-      "19 a task that writes a document through ctx.repo, with no sync server: it completes at once, the page's Repo has what it wrote (through the link), and its run's log says nothing stays behind",
-      last.state === "succeeded" && pageHas === true && !kept.some((line) => /stays on this machine|had not reached/.test(line)) && Math.max(...times) < 1_000,
-      `ten in a row: median ${median(times).toFixed(1)} ms, worst ${Math.max(...times).toFixed(1)} ms; then ${last.state}, the page's Repo has its document within 500 ms: ${pageHas}; its run's log ${J(kept)}`,
+      "19 a task that writes a document through ctx.repo, with no sync server: it completes at once, and the page's Repo has what it wrote within 500 ms (through the pipe)",
+      last.state === "succeeded" && pageHas === true && Math.max(...times) < 1_000,
+      `ten in a row: median ${median(times).toFixed(1)} ms, worst ${Math.max(...times).toFixed(1)} ms; then ${last.state}, the page's Repo has its document within 500 ms: ${pageHas}`,
     );
   }
 
@@ -1650,18 +1494,15 @@ try {
         );
       }
 
-      // 27. A task that changes a document the page made and makes one: when
-      // doWork resolves, the site's Repo already has both, without asking.
+      // 27. A task that changes a document the page made and makes one: the
+      // site's Repo has both within 2 s of doWork resolving.
       {
         const doc = await L.js(`probe.siteDoc({ made: 'by the page' })`);
-        const got = await L.js(
-          `probe.work(${J(MAKES_AND_CHANGES)}, { doc: ${J(doc)}, tag: 'twenty-seven' }).then((work) => ({ ...work, changed: probe.siteNow(${J(doc)}), made: work.result?.made ? probe.siteNow(work.result.made) : null }))`,
-          60_000,
-        );
+        const got = await L.js(`probe.work(${J(MAKES_AND_CHANGES)}, { doc: ${J(doc)}, tag: 'twenty-seven' }).then(${withWrites(doc, "twenty-seven")})`, 60_000);
         check(
-          "27 a task that changes a document the page made and makes a new one: when doWork resolves, the site's Repo has the change and the new document",
+          "27 a task that changes a document the page made and makes a new one: the site's Repo has the change and the new document within 2 s of doWork resolving",
           got.result?.where === "worker" && got.changed?.changed === "twenty-seven" && got.made?.made === "twenty-seven",
-          `doWork ${got.error ? `rejected ${J(got.error)}` : `gave ${J(got.result)}`} in ${got.ms.toFixed(0)} ms; the site's Repo then had the changed document as ${J(got.changed)} and the new one as ${J(got.made)}`,
+          `doWork ${got.error ? `rejected ${J(got.error)}` : `gave ${J(got.result)}`} in ${got.ms.toFixed(0)} ms; the site's Repo had the changed document as ${J(got.changed)} and the new one as ${J(got.made)}, ${arrivedIn(got)}`,
         );
       }
 
@@ -1696,10 +1537,7 @@ try {
         const pageGoesOn = await L.js(
           `(async () => { const url = await probe.siteDoc({ after: true }); return probe.siteNow(url)?.after === true; })()`,
         );
-        const next = await L.js(
-          `probe.work(${J(MAKES_AND_CHANGES)}, { doc: ${J(doc)}, tag: 'after the stop' }).then((work) => ({ ...work, changed: probe.siteNow(${J(doc)}) }))`,
-          60_000,
-        );
+        const next = await L.js(`probe.work(${J(MAKES_AND_CHANGES)}, { doc: ${J(doc)}, tag: 'after the stop' }).then(${withWrites(doc, "after the stop")})`, 60_000);
         check(
           "29 a run worker ended in the middle of writing a page's document: its link leaves the site's Repo, the document stops changing, and the page and the next task go on with it",
           /cancelled/i.test(stopped.error ?? "") && nAtStop > 0 && nAfter === nLater && links === runWorkers + 1 && pageGoesOn && next.result?.where === "worker" && next.changed?.changed === "after the stop",
@@ -1715,26 +1553,25 @@ try {
       const waiting = await M.waitFor("probe.status()?.state === 'waiting'", 15_000);
 
       // 41. M's doWork is run by L's pool: M asks own through its site Repo,
-      // which hears no pool, and the task is taken by the pool L holds; when
-      // doWork resolves, the result is a run worker's, and what the task
-      // wrote is in M's site Repo: the change to a document M made, there
-      // without asking, and the new document, given at once when asked
-      // (from the database the two tabs share). M has no pool worker, no
-      // run worker and no link.
+      // which hears no pool, and the task is taken by the pool L holds; the
+      // result is a run worker's, and what the task wrote reaches M's site
+      // Repo within 2 s (from the database the two tabs share): the change
+      // to a document M made and the new document. M has no pool worker, no
+      // run worker and no pipe.
       {
         const doc = await M.js(`probe.siteDoc({ made: 'by M' })`);
         const heard = await M.js("probe.servedThroughSite(2000)");
         const got = await M.js(
-          `probe.work(${J(MAKES_AND_CHANGES)}, { doc: ${J(doc)}, tag: 'forty-one' }).then(async (work) => ({ ...work, changed: probe.siteNow(${J(doc)}), made: work.result?.made ? await probe.siteFind(work.result.made) : null, links: probe.siteLinks(), state: probe.status()?.state }))`,
+          `probe.work(${J(MAKES_AND_CHANGES)}, { doc: ${J(doc)}, tag: 'forty-one' }).then(${withWrites(doc, "forty-one")}).then((got) => ({ ...got, state: probe.status()?.state }))`,
           60_000,
         );
         const runs = got.views.at(-1)?.runs ?? [];
         const mWorkers = liveWorkers(M, /pool-worker|run-worker-entry/).length;
         const lRunWorkers = liveWorkers(L, /run-worker-entry/).length;
         check(
-          `41 a second page of the profile, not holding the pool${NO_NETWORK ? ", with no network" : ""}: its doWork through its own site Repo, which hears no pool, is run by the first page's pool, and the result and what the task wrote are in that Repo when doWork resolves`,
-          !!waiting && got.state === "waiting" && got.result?.where === "worker" && runs.includes(poolHere) && got.changed?.changed === "forty-one" && got.made?.value?.made === "forty-one" && got.links === 0 && mWorkers === 0,
-          `M ${waiting ? "waited" : "did not wait"} for the pool; heard through its site Repo ${J(heard.map((pool) => (pool.pool === poolHere ? "this browser's pool" : pool.pool)))}; doWork ${got.error ? `rejected ${J(got.error)}` : `gave ${J(got.result)}`} in ${got.ms.toFixed(0)} ms, states ${J(got.states)}, runs by ${J(runs.map((pool) => (pool === poolHere ? "this browser's pool" : pool)))}; M's site Repo then had ${J(got.changed)}, and gave ${J(got.made?.value ?? null)} in ${got.made ? got.made.ms.toFixed(0) : "?"} ms when asked; M ${got.state}, with ${got.links} links and ${mWorkers} pool or run workers; L has ${lRunWorkers} live run workers`,
+          `41 a second page of the profile, not holding the pool${NO_NETWORK ? ", with no network" : ""}: its doWork through its own site Repo, which hears no pool, is run by the first page's pool, with the result, and what the task wrote reaches that Repo within 2 s`,
+          !!waiting && got.state === "waiting" && got.result?.where === "worker" && runs.includes(poolHere) && got.changed?.changed === "forty-one" && got.made?.made === "forty-one" && got.links === 0 && mWorkers === 0,
+          `M ${waiting ? "waited" : "did not wait"} for the pool; heard through its site Repo ${J(heard.map((pool) => (pool.pool === poolHere ? "this browser's pool" : pool.pool)))}; doWork ${got.error ? `rejected ${J(got.error)}` : `gave ${J(got.result)}`} in ${got.ms.toFixed(0)} ms, states ${J(got.states)}, runs by ${J(runs.map((pool) => (pool === poolHere ? "this browser's pool" : pool)))}; M's site Repo had ${J(got.changed)} and ${J(got.made)}, ${arrivedIn(got)}; M ${got.state}, with ${got.links} links and ${mWorkers} pool or run workers; L has ${lRunWorkers} live run workers`,
         );
       }
 
@@ -1768,14 +1605,11 @@ try {
         const taken = await M.waitFor("probe.status()?.state === 'running'", 30_000);
         await sleep(LISTEN_MS);
         const doc = await M.js(`probe.siteDoc({ made: 'by M' })`);
-        const got = await M.js(
-          `probe.work(${J(MAKES_AND_CHANGES)}, { doc: ${J(doc)}, tag: 'thirty' }).then((work) => ({ ...work, changed: probe.siteNow(${J(doc)}), made: work.result?.made ? probe.siteNow(work.result.made) : null, links: probe.siteLinks() }))`,
-          60_000,
-        );
+        const got = await M.js(`probe.work(${J(MAKES_AND_CHANGES)}, { doc: ${J(doc)}, tag: 'thirty' }).then(${withWrites(doc, "thirty")})`, 60_000);
         check(
           "30 the pool handed over to another tab re-links: that tab's pool is linked to its own site Repo, runs its work, and its Repo sees what the work wrote",
           !!waiting && !!taken && got.result?.where === "worker" && got.changed?.changed === "thirty" && got.made?.made === "thirty" && got.links >= 2,
-          `M ${waiting ? "waited" : "did not wait"}, then ${taken ? "ran the pool" : `reads ${J(await M.js("probe.status()"))}`}; doWork ${got.error ? `rejected ${J(got.error)}` : `gave ${J(got.result)}`} in ${got.ms.toFixed(0)} ms; M's site Repo then had ${J(got.changed)} and ${J(got.made)}, with ${got.links} links`,
+          `M ${waiting ? "waited" : "did not wait"}, then ${taken ? "ran the pool" : `reads ${J(await M.js("probe.status()"))}`}; doWork ${got.error ? `rejected ${J(got.error)}` : `gave ${J(got.result)}`} in ${got.ms.toFixed(0)} ms; M's site Repo had ${J(got.changed)} and ${J(got.made)}, ${arrivedIn(got)}, with ${got.links} links`,
         );
 
         if (LIFETIMES) await linkLifetimes(M, path, browserContextId);
@@ -1786,7 +1620,6 @@ try {
   }
 
   await registryInPool();
-  await unsentSent();
 
   if (LIFETIMES) {
     if (NO_NETWORK) console.error(`skip 37 and 38 a cut-off page's writes reaching the sync server once mended, and another context hearing the pool through it: they need the sync server (${SYNC_SERVER}), and --no-network reaches none`);

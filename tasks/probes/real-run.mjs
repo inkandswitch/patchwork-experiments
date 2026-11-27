@@ -375,11 +375,9 @@ try {
     check("the badge says how many tasks the queue lists and that this tab serves it", !!badge && badge.state === "running", badge);
   });
 
-  // 7. a document a task writes through ctx.repo reaches the page. A browser's
-  // run worker keeps its documents in a database of its own, so this goes by
-  // the sync server, to this tab's tasks Repo and to the site's own alike; and
-  // the run says it ended only once the server had what it wrote, so its log
-  // says nothing of documents left behind.
+  // 7. a document a task writes through ctx.repo reaches the page, within
+  // 30 s of the run's ending: the site's Repo through the pipe, and this
+  // tab's tasks Repo by the sync server.
   await part("a document a task writes through ctx.repo reaches the page by the sync server: this tab's tasks Repo and the site's Repo both have it", async () => {
     const WRITES = J(`data:text/javascript,${encodeURIComponent("export default async (input, ctx) => { const doc = ctx.repo.create({ wrote: input.tag }); doc.change((d) => { d.changed = true; }); return doc.url; };")}`);
     const runWorkersBefore = new Set([...workers.keys()]);
@@ -407,16 +405,8 @@ try {
     const inNewRunWorker = [...workers.entries()].some(([id, w]) => kind(w.url) === "run" && !runWorkersBefore.has(id));
     report.writes = { runs: out, inNewRunWorker };
     check(
-      "a document a task writes through ctx.repo reaches the page: the site's Repo (through the local link) and this tab's tasks Repo both have it",
+      "a document a task writes through ctx.repo reaches the page within 30 s: the site's Repo (through the pipe) and this tab's tasks Repo both have it",
       out.every((o) => typeof o.url === "string" && o.url.startsWith("automerge:") && o.tasksRepo !== null && o.siteRepo !== null),
-      report.writes,
-    );
-    // A linked run worker says nothing in the log only when the site's Repo
-    // has what its run wrote; half a minute without it leaves a line
-    // (run-worker.ts, "Reachable before it is said, through the link").
-    check(
-      "the run workers waited until the site's Repo had what they wrote, one of them started for its run: their logs say nothing was left behind",
-      inNewRunWorker && out.every((o) => !o.runLog.some((m) => /sync server|had not reached/.test(m))),
       report.writes,
     );
   });
