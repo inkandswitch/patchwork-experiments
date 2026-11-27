@@ -1,9 +1,10 @@
 // A TTS import as work: what the TTS import tool does once a mod has been
 // dropped and kept, wherever it runs. The tool asks for it through the task
-// system's doWork (kit/task-client.js), so it runs on the person's own queue,
-// on one of their machines (a browser's run worker, or a Node run thread).
-// So it touches no DOM and imports
-// nothing a worker could not resolve; images over the size limit are made
+// system's doWork, so it runs on the person's own queue, on one of their
+// machines (a browser's run worker, or a Node run thread). So it touches no
+// DOM and imports by bare name only the plugin registry, which every pool
+// has, and from which it gets the task system's client (the library
+// tasks-next) when it runs; images over the size limit are made
 // smaller only where there is a canvas to do it (shrink.js), which a Node
 // thread has not.
 //
@@ -20,7 +21,7 @@
 // It returns the game's url and a line for a person, never data: the report
 // is on the import doc.
 
-import { findWhenThere } from "../kit/task-client.js";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { runImport, source } from "./importer.js";
 import { sameRequest } from "./request.js";
 
@@ -84,6 +85,7 @@ export async function importMod(input, ctx, { fetch = (...a) => globalThis.fetch
   const { signal } = ctx;
   const stopped = () => signal?.aborted;
   ctx.progress({ phase: "Opening the import", done: 0, total: 0 });
+  const { findWhenThere } = (await getRegistry("patchwork:library").loadWhenReady("tasks-next")).module;
   // what findWhenThere throws names the doc by its url, which is no message for a person
   const handle = await untilStopped(
     findWhenThere(ctx.repo, url).catch(() => {

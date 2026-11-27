@@ -333,14 +333,17 @@ those, found by TTS's cache naming) are kept at once as `file` docs
 (`src/tts/dropped.js`), and the import doc's `request` names them with the
 settings (`src/tts/request.js`; its id is the SHA-256 of both). The import is
 a task: `src/tts/import-task.js`, whose input is the import doc and that
-request, asked with the task kit's `doWork` (`src/kit/task-client.js`,
-`task-rules.js`) under a key made from the same request, on the person's own
-queue (made the first time it is needed), and one of their machines runs it:
-this browser's pool, when the tasks package is installed here, with no
-network too. It finishes after the page closes, and two pages asking are one
-import. While it waits, the tool says it waits for one of the person's
-machines, and, where the tasks package is not installed in this browser,
-that this browser takes no part. Where no queue can be had (no account
+request, asked with the task client's `doWork` under a key made from the
+same request, on the person's own queue (made the first time it is needed),
+and one of their machines runs it: this browser's pool among them, with no
+network too.
+The client is the Tasks package's, the library `tasks-next` in the plugin
+registry, in the page and in the pool that runs the task alike; where the
+Tasks package is not installed, the tool says only "Importing a Tabletop
+Simulator mod needs the Tasks package, which is not installed here." and
+carries on when it arrives. It finishes after the page closes, and two pages
+asking are one import. While it waits, the tool says it waits for one of the
+person's machines. Where no queue can be had (no account
 open, nowhere to keep the list of queues), `doWork`'s sentence is shown as
 written; so is "This copy of the Tabletop Simulator import is not loaded
 from a package, so Import cannot be asked of your queue." for a built copy
@@ -351,7 +354,7 @@ while the doc still asks for that request; a second run of it finds the first
 one's game and returns it. Nothing writes that an import is under way: what a
 person sees is read from the doc and from the work (`src/tts/status.js`): this
 page's own asking, or the work under the request's key on the person's own
-queue, followed with the kit's `watchWork` (which says within ten seconds,
+queue, followed with the client's `watchWork` (which says within ten seconds,
 also when their queue is made while the tool is open or cannot be had) and
 stopped with `stopWork`. An asked import with neither an outcome nor work
 going on shows as interrupted, with the drop zone and **Import again** (the
@@ -371,7 +374,6 @@ is drawn without it, and the report says so.
 | `src/dice/`, `src/bag/`, `src/keep/`, `src/tts/` | dice, cups and lots; bags; keepers; the importer |
 | `src/library/` | the game library and its launcher |
 | `src/kit/glb.js` | the scene's kit GLB encoder (a copy: `scripts/check-kit.mjs`), for dice and bags |
-| `src/kit/task-rules.js`, `task-client.js` | the task system's kit (copies: `scripts/check-kit.mjs`), for the TTS import |
 | `src/empty-scene.js`, `scene-package.js` | a fresh scene doc (a copy of the scene's init); a doc's suggested import |
 | `src/test/` | the stage stand-in (`fakes.js`), the telling copy, stand-ins for seats, fake repos, a PNG codec |
 | `GAME-FORMAT.md`, `contract/v2/` | the format: spec, schema, validator, the recipe (`recipe.js`), fixtures |

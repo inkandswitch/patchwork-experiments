@@ -1,11 +1,16 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import TtsImportTool from "./tool.js";
 import { TtsImportDatatype } from "./datatype.js";
 import { plugins } from "../index.js";
 import { FakeRepo } from "../test/fake-repo.js";
 
-function mount(seed = {}) {
+// the Tasks package's client, standing in: it knows of no work (tool-import.test.js asks it more)
+getRegistry("patchwork:library").register({ type: "patchwork:library", id: "tasks-next", name: "Tasks client (stand-in)", load: async () => ({ watchWork: () => () => {} }) }, "test:tasks");
+
+/** The tool mounted on an import doc (with `seed`), once it has the client. */
+async function mount(seed = {}) {
   const repo = new FakeRepo();
   const doc = { "@patchwork": { type: "tts-import" } };
   TtsImportDatatype.init(doc);
@@ -16,6 +21,7 @@ function mount(seed = {}) {
   const opened = [];
   element.addEventListener("patchwork:open-document", (e) => opened.push(e.detail));
   const cleanup = TtsImportTool(handle, element);
+  await new Promise((resolve) => setTimeout(resolve, 0));
   return { handle, element, cleanup, opened };
 }
 
@@ -42,8 +48,8 @@ describe("the datatype", () => {
 });
 
 describe("the tool", () => {
-  it("offers a drop zone and settings, and writes settings to the doc", () => {
-    const { element, handle, cleanup } = mount();
+  it("offers a drop zone and settings, and writes settings to the doc", async () => {
+    const { element, handle, cleanup } = await mount();
     expect(element.querySelector(".tts-import .drop")).toBeTruthy();
     expect(element.textContent).toContain("Drop a Tabletop Simulator mod here");
     const box = [...element.querySelectorAll(".settings input[type=checkbox]")][0];
@@ -55,14 +61,14 @@ describe("the tool", () => {
     expect(element.querySelector("style")).toBeNull();
   });
 
-  it("shows a report with what's missing, and opens the game it made with the tabletop-game tool", () => {
+  it("shows a report with what's missing, and opens the game it made with the tabletop-game tool", async () => {
     const report = {
       mod: { saveName: "Tiny", fileName: "x.json", objects: 17 },
       counts: { placed: 15, pieces: 16, cards: 4, decks: 1, bags: 1, dice: 1, assets: { cache: 7, fetched: 0, missing: 1 }, seats: 1, skipped: { "3DText": 1 }, approximated: {}, byName: { Card: 4 } },
       assets: { a: { url: "https://example.invalid/x.obj", usedBy: ["Lost model"], source: null, error: "not in the dropped files" } },
       warnings: [],
     };
-    const { element, opened } = mount({ request: { id: "r", files: [], settings: {} }, imported: { id: "r", gameUrl: "automerge:game", report }, games: ["automerge:game"] });
+    const { element, opened } = await mount({ request: { id: "r", files: [], settings: {} }, imported: { id: "r", gameUrl: "automerge:game", report }, games: ["automerge:game"] });
     expect(element.textContent).toContain("Missing assets (1)");
     expect(element.textContent).toContain("https://example.invalid/x.obj");
     expect(element.textContent).toContain("3DText");
@@ -71,8 +77,8 @@ describe("the tool", () => {
     expect(opened).toEqual([{ url: "automerge:game", toolId: "tabletop-game" }]);
   });
 
-  it("shows an import's failure", () => {
-    const { element } = mount({ request: { id: "r", files: [], settings: {} }, imported: { id: "r", error: "No Tabletop Simulator save found" } });
+  it("shows an import's failure", async () => {
+    const { element } = await mount({ request: { id: "r", files: [], settings: {} }, imported: { id: "r", error: "No Tabletop Simulator save found" } });
     expect(element.querySelector(".error").textContent).toContain("No Tabletop Simulator save found");
   });
 });

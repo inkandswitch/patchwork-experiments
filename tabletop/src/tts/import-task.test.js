@@ -1,11 +1,14 @@
 // @vitest-environment node
 // The TTS import as a task (import-task.js), on the tiny fixture mod kept as
 // file docs the way the tool keeps a drop (dropped.js), with a stand-in
-// fetch and a stand-in ctx: the game it makes is the importer's own; it
-// writes the outcome only while the doc still asks for this import; a second
-// run makes no second game; a stop is prompt and writes nothing; a fetch
-// that fails says what it says today; what it returns is small.
-import { describe, it, expect, vi } from "vitest";
+// fetch, a stand-in ctx and a stand-in task client registered as the library
+// tasks-next (the real one runs in probes/tts-import-run.mjs): the game it
+// makes is the importer's own; it writes the outcome only while the doc
+// still asks for this import; a second run makes no second game; a stop is
+// prompt and writes nothing; a fetch that fails says what it says today;
+// what it returns is small.
+import { describe, it, expect } from "vitest";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "../test/fake-repo.js";
 import { fixtureSources } from "./test/fixture.js";
 import { storeDropped, NO_SAVE } from "./dropped.js";
@@ -14,6 +17,9 @@ import { DEFAULT_SETTINGS } from "./settings.js";
 import importTask, { importMod, LOST_FILE, MOVED, STOPPED } from "./import-task.js";
 import { runImport } from "./importer.js";
 import tinyGame from "../../contract/v2/fixtures/valid/tts-tiny-mod.json" with { type: "json" };
+
+// the client's findWhenThere, standing in: the doc if the repo has it
+getRegistry("patchwork:library").register({ type: "patchwork:library", id: "tasks-next", name: "Tasks client (stand-in)", load: async () => ({ findWhenThere: (repo, url) => repo.find(url) }) }, "test:tasks");
 
 const notFound = async () => ({ ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) });
 
@@ -223,16 +229,7 @@ describe("the import task", () => {
   it("a kept file that cannot be had fails with LOST_FILE, kept on the doc for whoever opens it", async () => {
     const { repo, doc, input, made } = await asked();
     repo.handles.delete(input.request.files[1].url);
-    vi.useFakeTimers();
-    try {
-      const run = importMod(input, context(repo), { fetch: notFound, shrink: null });
-      const failed = expect(run).rejects.toThrow(LOST_FILE);
-      // findWhenThere asks again for about half a minute before it gives up
-      await vi.runAllTimersAsync();
-      await failed;
-    } finally {
-      vi.useRealTimers();
-    }
+    await expect(importMod(input, context(repo), { fetch: notFound, shrink: null })).rejects.toThrow(LOST_FILE);
     expect(doc.doc().imported).toMatchObject({ id: input.request.id, error: LOST_FILE });
     expect(doc.doc().games).toEqual([]);
     expect(made()).toEqual([]);

@@ -43,7 +43,6 @@ export const LINES = Object.freeze({
   stopped: "Stopped.",
   looking: "Looking for the import…",
   waiting: "Waiting for one of your machines to take it up…",
-  waitingWithoutThisBrowser: "Waiting for one of your machines to take it up: this browser takes no part, because the tasks package is not installed here.",
   stopping: "Stopping…",
   starting: "Starting…",
   arriving: "Imported; the report is on its way.",
@@ -85,18 +84,12 @@ export function shownStatus(doc, work) {
   return { status: "interrupted", line: LINES.interrupted };
 }
 
-/**
- * What to say about work going on: how far it is, and where it runs. `poolHere`
- * is whether this page takes part in its browser's pool (the task kit's
- * `poolHere()`); where it does not, waiting says so.
- */
-export function workLines(work, poolHere = true) {
+/** What to say about work going on: how far it is, and where it runs. */
+export function workLines(work) {
   const p = /** @type {any} */ (work?.progress);
   const stage =
     work?.state === "waiting" || work?.state === "stalled"
-      ? poolHere
-        ? LINES.waiting
-        : LINES.waitingWithoutThisBrowser
+      ? LINES.waiting
       : work?.state === "stopping"
         ? LINES.stopping
         : p && typeof p === "object" && p.phase

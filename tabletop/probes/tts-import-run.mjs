@@ -4,7 +4,9 @@
 // (--local), asked by this process from a Repo of its own through
 // ../tasks/dist-node/task-client.mjs, the way the TTS import tool on another
 // machine would ask, through the real sync server. The task is the built
-// dist/import-task.js (run `pnpm build` first), the path a page asks for.
+// dist/import-task.js (run `pnpm build` first), the path a page asks for; it
+// gets the task client from the run thread's plugin registry (tasks-next,
+// the host's own build: this package names no tasks package).
 //
 // The mod is the tiny fixture (fixtures/tiny-mod), kept as file docs as the
 // tool keeps a drop (src/tts/dropped.js). Nothing is fetched from the

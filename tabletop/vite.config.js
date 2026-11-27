@@ -7,8 +7,8 @@ import external from "@inkandswitch/patchwork-bootloader/externals";
 //
 // The second entry is the TTS import's task (src/tts/import-task.js), at
 // dist/import-task.js in every build: a task names its code by that path, and
-// a pool imports it in a run worker, so it too stays free of DOM and bare
-// imports.
+// a pool imports it in a run worker, so it too stays free of DOM, and of bare
+// imports but the plugin registry's, which every pool has.
 export default defineConfig({
   base: "./",
   build: {

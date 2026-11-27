@@ -12,31 +12,37 @@
 // and two pages asking are one import. What is shown is decided in one place
 // (status.js) from the doc and from whether that work is going on; an import
 // asked from another tab or before a reload is followed by its key
-// (watchWork) and shown, not offered again.
+// (watchWork) and shown, not offered again. These are the Tasks package's
+// client (the registry's library tasks-next); until it is here, the tool
+// says it needs that package and does nothing else.
 
 import css from "./styles.css?inline";
 import { DEFAULT_SETTINGS } from "./settings.js";
 import { importAsk, importRequest, canonicalJson } from "./request.js";
 import { shownStatus, underWay, workLines } from "./status.js";
-import { doWork, inSamePackage, poolHere, stopWork, watchWork } from "../kit/task-client.js";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
 
 const OPEN_EVENT = "patchwork:open-document";
 
 /** What is said when this copy has no url its import task could be imported by. */
 export const NOT_FROM_A_PACKAGE = "This copy of the Tabletop Simulator import is not loaded from a package, so Import cannot be asked of your queue.";
 
+/** What is said, and all that is shown, while the Tasks package is not installed here. */
+export const NEEDS_TASKS = "Importing a Tabletop Simulator mod needs the Tasks package, which is not installed here.";
+
 // Vite sets this in the built package, whose import task is dist/import-task.js (vite.config.js)
 const BUILT = import.meta.env?.PROD === true;
 
 /**
- * Where the import's code is, as an import url a pool can import: the
+ * Where the import's code is, as an import url a pool can import (by the
+ * Tasks client's `inSamePackage`): the
  * package's own file, named by the package's url and not this site's, when
  * this module was loaded from a package in automerge; the file beside this
  * one when it runs unbuilt from anywhere else (tests, a dev server: only this
  * browser's pool can reach it); null when neither can be known, and the
  * import then cannot be asked.
  */
-export function importTaskUrl(here = import.meta.url, built = BUILT) {
+export function importTaskUrl(inSamePackage, here = import.meta.url, built = BUILT) {
   const inPackage = inSamePackage(here, built ? "dist/import-task.js" : "src/tts/import-task.js");
   if (inPackage || built) return inPackage;
   try {
@@ -72,6 +78,8 @@ export default function TtsImportTool(handle, element) {
   element.append(style, root);
   let dead = false;
   let dropping = false;
+  // the Tasks package's client, once it is here
+  let tasks = null;
   // this page's own import, the latest: { controller, view } (view: a Work, status.js), kept once it has ended
   let job = null;
   // the import under the doc's request's key, as watchWork has it: { request, key, view, stop },
@@ -107,7 +115,7 @@ export default function TtsImportTool(handle, element) {
     seen = null;
     if (!id) return;
     const followed = (seen = { request: id, key: importAsk(handle.url, request).key, view: undefined, stop: () => {} });
-    followed.stop = watchWork(repoOf(), followed.key, (view) => {
+    followed.stop = tasks.watchWork(repoOf(), followed.key, (view) => {
       if (dead || seen !== followed) return;
       followed.view = view;
       update();
@@ -132,10 +140,10 @@ export default function TtsImportTool(handle, element) {
       if (canonicalJson(doc().request ?? null) !== canonicalJson(request)) handle.change((d) => (d.request = plain(request)));
       show({ request: request.id, state: "starting", progress: null, logs: [], taskUrl: null });
       const { input, key } = importAsk(handle.url, request);
-      const importUrl = importTaskUrl();
+      const importUrl = importTaskUrl(tasks.inSamePackage);
       if (!importUrl) throw new Error(NOT_FROM_A_PACKAGE);
       const onProgress = (view) => show({ ...view, request: request.id });
-      await doWork(repoOf(), { importUrl, input, key }, { signal: controller.signal, onProgress });
+      await tasks.doWork(repoOf(), { importUrl, input, key }, { signal: controller.signal, onProgress });
     } catch (err) {
       // the views have said how the work ended; what ended before any did (keeping the files, a stop while its queue was looked for, or doWork's sentence, shown as written) is said here
       if (underWay(mine.view.state)) show({ ...mine.view, state: controller.signal.aborted ? "cancelled" : "failed", error: String(err?.message ?? err) });
@@ -157,7 +165,7 @@ export default function TtsImportTool(handle, element) {
     const w = work();
     if (!w || !underWay(w.state)) return;
     if (job && job.view === w) job.controller.abort();
-    else if (seen) void stopWork(repoOf(), seen.key);
+    else if (seen) void tasks.stopWork(repoOf(), seen.key);
   }
 
   const fromDrop = (dt) => {
@@ -193,9 +201,6 @@ export default function TtsImportTool(handle, element) {
     delete root.dataset.dropping;
     if (!busy()) start(keepDropped(fromDrop(e.dataTransfer)));
   };
-  root.addEventListener("dragover", onDragOver);
-  root.addEventListener("dragleave", onDragLeave);
-  root.addEventListener("drop", onDrop);
 
   const picker = (folder) =>
     el("input", {
@@ -213,7 +218,7 @@ export default function TtsImportTool(handle, element) {
   let progressEl = null;
   function renderProgress(w) {
     if (!progressEl) return;
-    const { stage, where, done, total } = workLines(w, poolHere());
+    const { stage, where, done, total } = workLines(w);
     progressEl.replaceChildren(
       el("div", { class: "phase" }, stage),
       el("progress", { max: total || 1, value: total ? done : null }),
@@ -368,22 +373,23 @@ export default function TtsImportTool(handle, element) {
     render(s);
   }
 
-  // Whether this browser takes part (poolHere) changes when the tasks package
-  // registers this page's pool host, a moment after doWork joins the pool: the
-  // waiting words are worked out again then, where the package says so.
-  const tasksHere = (globalThis.patchworkTasks ??= {});
-  const hostsChanged = (tasksHere.hostsChanged ??= new EventTarget());
-  hostsChanged.addEventListener("change", update);
-
-  update();
-  handle.on("change", update);
+  const libraries = getRegistry("patchwork:library");
+  if (!libraries.has("tasks-next")) root.textContent = NEEDS_TASKS;
+  libraries.loadWhenReady("tasks-next").then(({ module }) => {
+    if (dead) return;
+    tasks = module;
+    root.addEventListener("dragover", onDragOver);
+    root.addEventListener("dragleave", onDragLeave);
+    root.addEventListener("drop", onDrop);
+    update();
+    handle.on("change", update);
+  });
 
   return () => {
     dead = true;
     // a drop still being kept, before doWork is called, is this page's alone and ends with it; work asked of the person's queue goes on
     if (job && underWay(job.view.state) && job.view.request === null) job.controller.abort();
     seen?.stop();
-    hostsChanged.removeEventListener("change", update);
     handle.off("change", update);
     root.removeEventListener("dragover", onDragOver);
     root.removeEventListener("dragleave", onDragLeave);

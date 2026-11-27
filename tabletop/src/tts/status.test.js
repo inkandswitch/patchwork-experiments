@@ -123,9 +123,6 @@ describe("what is said of work going on", () => {
     expect(workLines(forR("running", { taskUrl: "automerge:t", progress: { phase: "Translating the game", done: 0, total: 0 } }))).toEqual({ stage: "Translating the game", where: "On your own machines: closing this does not stop it.", done: null, total: null });
     expect(workLines(forR("waiting", { taskUrl: "automerge:t" })).stage).toBe(LINES.waiting);
     expect(workLines(forR("stalled", { taskUrl: "automerge:t" })).stage).toBe(LINES.waiting);
-    // where this page takes no part in its browser's pool (the tasks package not installed here), waiting says so
-    expect(workLines(forR("waiting", { taskUrl: "automerge:t" }), false).stage).toBe(LINES.waitingWithoutThisBrowser);
-    expect(workLines(forR("stalled", { taskUrl: "automerge:t" }), false).stage).toBe(LINES.waitingWithoutThisBrowser);
     expect(workLines(forR("stopping", { taskUrl: "automerge:t" })).stage).toBe(LINES.stopping);
     expect(workLines(works["keeping a drop"])).toMatchObject({ stage: "Keeping what was dropped: 1 of 3", where: "In this page: closing it stops the import." });
   });

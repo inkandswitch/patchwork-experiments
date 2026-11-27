@@ -1,12 +1,15 @@
 // The TTS import tool's drop, through the task system's doWork, watchWork
-// and stopWork (stood in for: their own tests are the tasks package's), on a page with
-// the stand-in Repo: what a drop keeps and asks for, under which key; what
-// a person sees while it waits for and runs on their own machines (and when
-// this browser takes no part); a rejection shown as written; Cancel; closing
-// the tool; an import asked from elsewhere followed and not offered again;
-// an import that nothing is doing shown as interrupted, with the drop zone
-// and Import again; and where the task's code is.
+// and stopWork: a stand-in client registered as the library tasks-next (the
+// real one's tests are the tasks package's; probes/tts-import-run.mjs runs
+// the real build), on a page with the stand-in Repo: what a drop keeps and
+// asks for, under which key; what a person sees while it waits for and runs
+// on their own machines; a rejection shown as written; Cancel; closing the
+// tool; an import asked from elsewhere followed and not offered again; an
+// import that nothing is doing shown as interrupted, with the drop zone and
+// Import again; where the task's code is; and the tool where the Tasks
+// package is not installed, until it arrives.
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { FakeRepo } from "../test/fake-repo.js";
@@ -16,9 +19,10 @@ import { importAsk, importRequest } from "./request.js";
 import { DEFAULT_SETTINGS } from "./settings.js";
 import { LINES } from "./status.js";
 
-const calls = vi.hoisted(() => ({ doWork: [], watch: [], stop: [] }));
-vi.mock("../kit/task-client.js", async (importOriginal) => ({
-  ...(await importOriginal()),
+const calls = { doWork: [], watch: [], stop: [] };
+const client = {
+  // a package's file for a module loaded from site.example, else none
+  inSamePackage: (here, path) => (here.startsWith("https://site.example/") ? `/package/${path}` : null),
   doWork: (repo, request, options) =>
     new Promise((resolve, reject) => {
       calls.doWork.push({ repo, request, options, resolve, reject });
@@ -33,9 +37,11 @@ vi.mock("../kit/task-client.js", async (importOriginal) => ({
     calls.stop.push({ repo, key });
     return true;
   },
-}));
+};
+const install = (registry = getRegistry) => registry("patchwork:library").register({ type: "patchwork:library", id: "tasks-next", name: "Tasks client (stand-in)", load: async () => client }, "test:tasks");
+install();
 
-const { default: TtsImportTool, importTaskUrl, NOT_FROM_A_PACKAGE } = await import("./tool.js");
+const { default: TtsImportTool, importTaskUrl, NOT_FROM_A_PACKAGE, NEEDS_TASKS } = await import("./tool.js");
 
 // the tiny fixture mod (fixtures/tiny-mod) as sources; test/fixture.js finds it by import.meta.url, which this page's environment does not give as a file
 const FIXTURE = join(process.cwd(), "fixtures/tiny-mod");
@@ -63,11 +69,10 @@ beforeEach(() => {
 });
 afterEach(() => {
   document.body.innerHTML = "";
-  delete window.patchworkTasks;
 });
 
-/** The tool mounted on an import doc (with `seed`). */
-function mounted({ seed = {}, Tool = TtsImportTool } = {}) {
+/** The tool mounted on an import doc (with `seed`), once it has the client. */
+async function mounted({ seed = {}, Tool = TtsImportTool } = {}) {
   const repo = new FakeRepo();
   const doc = { "@patchwork": { type: "tts-import" } };
   TtsImportDatatype.init(doc);
@@ -78,6 +83,7 @@ function mounted({ seed = {}, Tool = TtsImportTool } = {}) {
   const unmount = Tool(handle, element);
   const $ = (s) => element.querySelector(s);
   const text = () => element.querySelector(".tts-import").textContent;
+  await settle();
   return { repo, handle, element, unmount, $, text };
 }
 
@@ -95,7 +101,7 @@ function drop(element, { without = [] } = {}) {
 
 describe("dropping a mod", () => {
   it("keeps the save and its files as file docs, asks for them on the doc, and asks doWork for this package's import task under the doc's key", async () => {
-    const { repo, handle, element } = mounted();
+    const { repo, handle, element } = await mounted();
     drop(element);
     await settle();
     const request = handle.doc().request;
@@ -107,7 +113,7 @@ describe("dropping a mod", () => {
     expect(calls.doWork).toHaveLength(1);
     const { input, key } = importAsk(handle.url, request);
     expect(calls.doWork[0].repo).toBe(repo);
-    expect(calls.doWork[0].request).toEqual({ importUrl: importTaskUrl(), input, key });
+    expect(calls.doWork[0].request).toEqual({ importUrl: importTaskUrl(client.inSamePackage), input, key });
     expect(calls.doWork[0].request.importUrl).toMatch(/\/src\/tts\/import-task\.js$/);
     // nothing on the doc says it is importing: only the request, and later the outcome
     expect(handle.doc().imported).toBeNull();
@@ -115,7 +121,7 @@ describe("dropping a mod", () => {
   });
 
   it("asked of the person's own queue: shows the stage, says closing this does not stop it, offers Cancel and no drop zone; when the outcome comes, the report", async () => {
-    const { handle, element, $, text } = mounted();
+    const { handle, element, $, text } = await mounted();
     drop(element);
     await settle();
     const { options, resolve } = calls.doWork[0];
@@ -138,48 +144,19 @@ describe("dropping a mod", () => {
     expect($(".progress")).toBeNull();
   });
 
-  it("waiting: says it waits for one of the person's machines, and, where the tasks package is not installed here, that this browser takes no part", async () => {
-    const { element, $ } = mounted();
+  it("waiting: says it waits for one of the person's machines", async () => {
+    const { element, $ } = await mounted();
     drop(element);
     await settle();
-    window.patchworkTasks = { poolHosts: { 1: {} } };
     calls.doWork[0].options.onProgress(view({ taskUrl: TASK, state: "waiting" }));
     expect($(".progress .phase").textContent).toBe(LINES.waiting);
     expect($(".where").textContent).toBe("On your own machines: closing this does not stop it.");
-    delete window.patchworkTasks;
-    calls.doWork[0].options.onProgress(view({ taskUrl: TASK, state: "stalled" }));
-    expect($(".progress .phase").textContent).toBe(LINES.waitingWithoutThisBrowser);
-    expect(LINES.waitingWithoutThisBrowser).toBe("Waiting for one of your machines to take it up: this browser takes no part, because the tasks package is not installed here.");
     calls.doWork[0].options.onProgress(view({ taskUrl: TASK, progress: { phase: "Translating the game", done: 0, total: 0 } }));
     expect($(".progress .phase").textContent).toBe("Translating the game");
   });
 
-  it("waiting, asked before this page's pool host has started: says this browser takes no part, and stops saying so once the host is there", async () => {
-    // doWork's joinPool appends the pool's component, which registers its
-    // host only once the package's component is loaded and mounted; a view
-    // that arrives before then is shown with poolHere() false. The tool works
-    // the words out again on window.patchworkTasks's hostsChanged, with no new
-    // view, and lets go of that listener when it closes.
-    const { element, unmount, $ } = mounted();
-    drop(element);
-    await settle();
-    calls.doWork[0].options.onProgress(view({ taskUrl: TASK, state: "waiting" }));
-    expect($(".progress .phase").textContent).toBe(LINES.waitingWithoutThisBrowser);
-    // the pool's component mounts: its host is registered, as pool-host.ts's startPoolHost does it
-    const hosts = (window.patchworkTasks ??= {});
-    hosts.poolHosts ??= {};
-    hosts.hostsChanged ??= new EventTarget();
-    hosts.poolHosts[1] = {};
-    hosts.hostsChanged.dispatchEvent(new Event("change"));
-    await settle();
-    expect($(".progress .phase").textContent).toBe(LINES.waiting);
-    const added = vi.spyOn(hosts.hostsChanged, "removeEventListener");
-    unmount();
-    expect(added).toHaveBeenCalledWith("change", expect.any(Function));
-  });
-
   it("Cancel aborts the work's signal; the tool says it stopped and offers the drop zone and Import again", async () => {
-    const { element, $ } = mounted();
+    const { element, $ } = await mounted();
     drop(element);
     await settle();
     calls.doWork[0].options.onProgress(view({}));
@@ -193,7 +170,7 @@ describe("dropping a mod", () => {
   });
 
   it("stopped from another page (its task ended cancelled): says it stopped", async () => {
-    const { element, $ } = mounted();
+    const { element, $ } = await mounted();
     drop(element);
     await settle();
     calls.doWork[0].options.onProgress(view({ taskUrl: TASK, state: "cancelled" }));
@@ -203,7 +180,7 @@ describe("dropping a mod", () => {
   });
 
   it("a rejection of doWork (no queue could be had) is shown as written, with the drop zone and Import again", async () => {
-    const { element, $ } = mounted();
+    const { element, $ } = await mounted();
     drop(element);
     await settle();
     calls.doWork[0].reject(new Error("Task queues can only be kept from a Patchwork page with your account open."));
@@ -218,8 +195,9 @@ describe("dropping a mod", () => {
     vi.stubEnv("PROD", true);
     vi.resetModules();
     try {
+      install((await import("@inkandswitch/patchwork-plugins")).getRegistry);
       const { default: BuiltTool } = await import("./tool.js");
-      const { handle, element, $ } = mounted({ Tool: BuiltTool });
+      const { handle, element, $ } = await mounted({ Tool: BuiltTool });
       drop(element);
       await settle();
       expect(handle.doc().request).toBeTruthy();
@@ -231,7 +209,7 @@ describe("dropping a mod", () => {
   });
 
   it("an import that failed shows its message", async () => {
-    const { element, $ } = mounted();
+    const { element, $ } = await mounted();
     drop(element);
     await settle();
     calls.doWork[0].options.onProgress(view({ state: "failed", error: "A file kept from the drop could not be opened: drop the mod again." }));
@@ -242,7 +220,7 @@ describe("dropping a mod", () => {
   });
 
   it("a drop with no save keeps nothing, asks nothing, and says what to drop", async () => {
-    const { repo, handle, element, $ } = mounted();
+    const { repo, handle, element, $ } = await mounted();
     drop(element, { without: [".json"] });
     await settle();
     expect($(".error").textContent).toMatch(/^No Tabletop Simulator save found/);
@@ -252,7 +230,7 @@ describe("dropping a mod", () => {
   });
 
   it("a drop while it imports asks nothing more", async () => {
-    const { element } = mounted();
+    const { element } = await mounted();
     drop(element);
     await settle();
     drop(element);
@@ -261,19 +239,19 @@ describe("dropping a mod", () => {
   });
 
   it("closing the tool while the drop is still being kept stops the keeping, and nothing is asked; once doWork is called, closing leaves the import going", async () => {
-    const keeping = mounted();
+    const keeping = await mounted();
     drop(keeping.element);
     keeping.unmount();
     await settle();
     expect(calls.doWork).toHaveLength(0);
 
-    const asking = mounted();
+    const asking = await mounted();
     drop(asking.element);
     await settle();
     asking.unmount();
     expect(calls.doWork[0].options.signal.aborted).toBe(false);
 
-    const asked = mounted();
+    const asked = await mounted();
     drop(asked.element);
     await settle();
     calls.doWork[1].options.onProgress(view({ taskUrl: TASK }));
@@ -289,7 +267,7 @@ describe("an import asked earlier", () => {
   });
 
   it("with no outcome and no work known under its key (watchWork says missing): interrupted, with the drop zone and Import again", async () => {
-    const { handle, $ } = mounted({ seed: { request } });
+    const { handle, $ } = await mounted({ seed: { request } });
     expect(calls.watch).toHaveLength(1);
     calls.watch[0].onChange(view({ key: importAsk(handle.url, request).key, state: "missing" }));
     await settle();
@@ -305,7 +283,7 @@ describe("an import asked earlier", () => {
   });
 
   it("is followed under its key with watchWork: shown, not offered again, and Cancel stops it by its key", async () => {
-    const { repo, handle, $ } = mounted({ seed: { request } });
+    const { repo, handle, $ } = await mounted({ seed: { request } });
     // still finding out (watchWork reports within the lapse): neither offered nor said to be interrupted
     expect($(".pill").textContent).toBe("…");
     expect($(".drop")).toBeNull();
@@ -326,7 +304,7 @@ describe("an import asked earlier", () => {
   });
 
   it("work followed under its key that comes to be known no more (missing, as when the person's queue changes): interrupted, not the old view", async () => {
-    const { handle, $ } = mounted({ seed: { request } });
+    const { handle, $ } = await mounted({ seed: { request } });
     await settle();
     calls.watch[0].onChange(view({ key: importAsk(handle.url, request).key, taskUrl: TASK }));
     expect($(".pill").textContent).toBe("importing");
@@ -335,14 +313,14 @@ describe("an import asked earlier", () => {
   });
 
   it("whose key names no task on the person's queue: interrupted", async () => {
-    const { handle, $ } = mounted({ seed: { request } });
+    const { handle, $ } = await mounted({ seed: { request } });
     await settle();
     calls.watch[0].onChange(view({ key: importAsk(handle.url, request).key, state: "missing" }));
     expect($(".pill").textContent).toBe("interrupted");
   });
 
   it("a drop made here is shown from its own progress, and the followed key changes with the request", async () => {
-    const { handle, element, $ } = mounted();
+    const { handle, element, $ } = await mounted();
     await settle();
     expect(calls.watch).toEqual([]);
     drop(element);
@@ -355,14 +333,14 @@ describe("an import asked earlier", () => {
   });
 
   it("closing the tool stops following", async () => {
-    const { unmount } = mounted({ seed: { request } });
+    const { unmount } = await mounted({ seed: { request } });
     await settle();
     unmount();
     expect(calls.watch[0].stopped).toBe(true);
   });
 
   it("done, with other settings now: offers Import again with these settings, with the kept files", async () => {
-    const { handle, $ } = mounted({ seed: { request, imported: { id: request.id, gameUrl: "automerge:g", report: { mod: {}, counts: {} } }, games: ["automerge:g"] } });
+    const { handle, $ } = await mounted({ seed: { request, imported: { id: request.id, gameUrl: "automerge:g", report: { mod: {}, counts: {} } }, games: ["automerge:g"] } });
     await settle();
     expect($("button.again")).toBeNull();
     handle.change((d) => (d.settings.includeContents = false));
@@ -375,18 +353,37 @@ describe("an import asked earlier", () => {
 });
 
 describe("where the import task's code is", () => {
-  const PKG = "automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P";
-  const inPackage = (path) => `https://site.example/${encodeURIComponent(`${PKG}#abc`)}/${path}`;
-  it("built, in a package: the package's dist/import-task.js, by the package's url and its heads, with no origin", () => {
-    expect(importTaskUrl(inPackage("dist/assets/tool-1234.js"), true)).toBe(`/${encodeURIComponent(`${PKG}#abc`)}/dist/import-task.js`);
+  const inPackage = (path) => `https://site.example/package/${path}`;
+  it("built, in a package: the package's dist/import-task.js", () => {
+    expect(importTaskUrl(client.inSamePackage, inPackage("dist/assets/tool-1234.js"), true)).toBe("/package/dist/import-task.js");
   });
   it("unbuilt, in a package: its src/tts/import-task.js", () => {
-    expect(importTaskUrl(inPackage("src/tts/tool.js"), false)).toBe(`/${encodeURIComponent(`${PKG}#abc`)}/src/tts/import-task.js`);
+    expect(importTaskUrl(client.inSamePackage, inPackage("src/tts/tool.js"), false)).toBe("/package/src/tts/import-task.js");
   });
   it("unbuilt, anywhere else: the file beside this one", () => {
-    expect(importTaskUrl("file:///x/tabletop/src/tts/tool.js", false)).toBe("file:///x/tabletop/src/tts/import-task.js");
+    expect(importTaskUrl(client.inSamePackage, "file:///x/tabletop/src/tts/tool.js", false)).toBe("file:///x/tabletop/src/tts/import-task.js");
   });
   it("built, not in a package: unknown, so the import cannot be asked", () => {
-    expect(importTaskUrl("http://localhost:4173/dist/assets/tool-1234.js", true)).toBeNull();
+    expect(importTaskUrl(client.inSamePackage, "http://localhost:4173/dist/assets/tool-1234.js", true)).toBeNull();
+  });
+});
+
+describe("where the Tasks package is not installed", () => {
+  it("says only that it needs it, takes no drop and follows nothing; when it arrives, carries on", async () => {
+    const libraries = getRegistry("patchwork:library");
+    libraries.remove("tasks-next");
+    const request = await importRequest([{ path: "Workshop/1.json", url: "automerge:f", size: 1 }], DEFAULT_SETTINGS);
+    const { handle, element, $, text } = await mounted({ seed: { request } });
+    expect(text()).toBe(NEEDS_TASKS);
+    expect(element.querySelectorAll(".tts-import *")).toHaveLength(0);
+    drop(element);
+    await settle();
+    expect(handle.doc().request).toEqual(request);
+    expect([calls.doWork, calls.watch]).toEqual([[], []]);
+    install();
+    await settle();
+    expect(calls.watch).toHaveLength(1);
+    expect($(".pill").textContent).toBe("…");
+    expect(text()).not.toContain(NEEDS_TASKS);
   });
 });
