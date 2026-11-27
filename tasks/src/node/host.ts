@@ -66,7 +66,8 @@
 // whenever it changes (../registry-snapshot.ts), so a task's code asks
 // `getRegistry(type).load(id)` as page code does. What the host has kept of
 // the document and its packages fills the registry with no network. A host
-// without --modules has an empty registry.
+// without --modules has only what every pool registers itself: the task
+// client, from this build.
 //
 // SIGINT or SIGTERM stops it: it takes nothing more, tells each run's code to
 // stop ('stopping'), ends its thread GRACE_MS later if it has not, records

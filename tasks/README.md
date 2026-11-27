@@ -190,7 +190,7 @@ package in that worker, through the site's service worker, as the page's does. O
 `--modules automerge:…` names a module-settings document: the host runs core's ModuleWatcher on
 it, imports each package from disk (its files written by the same materialise that fetches task
 code), fills its own registry, and sends its threads the same snapshot with where each package is
-on disk. A host without `--modules` has an empty registry. A plugin whose code needs the DOM is
+on disk. A host without `--modules` has only what every pool registers itself: the task client, from its own build. A plugin whose code needs the DOM is
 listed like any other, and fails only when something in a pool loads it; a lookup by id gives
 whichever package registered that id, in the version the pool has installed. A pool is the tasks
 package, so every run worker and run thread registers the task client (`tasks-next`, see Using it
