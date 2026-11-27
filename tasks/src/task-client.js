@@ -555,8 +555,8 @@ export function watch(repo, queueUrl, key, onChange, options = {}) {
   };
 }
 
-/** What waiting for a task rejects with when it was stopped. */
-const CANCELLED = 'The task was cancelled';
+/** What waiting for a task (`doWork`, `run`) rejects with when it was stopped. */
+export const CANCELLED = 'The task was cancelled';
 
 /**
  * Asks for a task and waits for it: resolves to its result when it succeeds,

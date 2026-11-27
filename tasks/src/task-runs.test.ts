@@ -26,9 +26,7 @@ import {
   aheadOf,
   askRun,
   cancelRun,
-  codeUrl,
   earlier,
-  findWhenThere,
   hearServing,
   isQueue,
   isRunEnded,
@@ -39,15 +37,15 @@ import {
   markStopped,
   queueCounts,
   servedBy,
-  setPackageUrl,
   shownRun,
 } from './task-runs.js';
+import { findWhenThere } from './task-client.js';
 import { BEAT_MS, allHeard, taskState, type Queue, type Run, type Task } from './task-rules.js';
 
 await initSubduction();
 
 const PACKAGE = 'automerge:2mv3rTpAcL5aUfYiQqb1RnQkQi3P';
-const CODE = 'daemon/run-task.mjs';
+const CODE = `/${encodeURIComponent(PACKAGE)}/daemon/run-task.mjs`;
 const TYPE = 'test-run';
 
 const newRepo = () => new Repo({ network: [] } as any);
@@ -97,32 +95,19 @@ const opened = (id: string, pool = 'P'): Run => ({ id, pool, start: 0 });
 const closed = (id: string, status: Run['status'], pool = 'P'): Run => ({ id, pool, start: 0, end: 1, status, result: null, logs: [] });
 const stop = (id = 'stop'): Run => ({ id, start: 0, end: 0, status: 'cancelled' });
 
-beforeEach(() => {
-  setPackageUrl(PACKAGE);
-});
 afterEach(() => {
   vi.useRealTimers();
 });
 
 // A page's side
 
-describe("the run's code", () => {
-  it("is named by the package's url and the path within it, given a package when this module isn't loaded from one", () => {
-    expect(codeUrl(CODE)).toBe(`/${encodeURIComponent(PACKAGE)}/${CODE}`);
-  });
-  it("can't be named by a copy not loaded from its package and not told it: a sentence saying so", () => {
-    setPackageUrl(null);
-    expect(() => codeUrl(CODE)).toThrow(/wasn't loaded from its package/);
-  });
-});
-
 describe('askRun', () => {
-  it("lists a task keyed by the run document's url, with { run } for its input and the package's code; the run document keeps the task's url, in a change with the options given", async () => {
+  it("lists a task keyed by the run document's url, with { run } for its input and the code named; the run document keeps the task's url, in a change with the options given", async () => {
     const { repo, queue, run } = world();
     const taskUrl = await askRun(repo, queue.url, run, CODE, { message: 'asked by Ann' });
     expect(Object.keys(queue.doc().jobs)).toEqual([run.url]);
     expect(queue.doc().jobs[run.url]).toMatchObject({ taskUrl, package: PACKAGE });
-    expect((await repo.find<Task>(taskUrl as any)).doc()).toEqual({ importUrl: codeUrl(CODE), input: { run: run.url }, key: run.url, runs: [] });
+    expect((await repo.find<Task>(taskUrl as any)).doc()).toEqual({ importUrl: CODE, input: { run: run.url }, key: run.url, runs: [] });
     expect(run.doc().task).toBe(taskUrl);
     expect(A.getHistory(run.doc()).at(-1)?.change.message).toBe('asked by Ann');
   });
@@ -131,13 +116,6 @@ describe('askRun', () => {
     const first = await askRun(repo, queue.url, run, CODE);
     expect(await askRun(repo, queue.url, run, CODE)).toBe(first);
     expect(Object.keys(queue.doc().jobs)).toEqual([run.url]);
-  });
-  it("asks nothing when the code can't be named", async () => {
-    const { repo, queue, run } = world();
-    setPackageUrl(null);
-    await expect(askRun(repo, queue.url, run, CODE)).rejects.toThrow(/wasn't loaded from its package/);
-    expect(queue.doc().jobs).toEqual({});
-    expect(run.doc().task).toBeNull();
   });
 });
 

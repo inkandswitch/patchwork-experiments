@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// An independent check of `settles` and `foldStep` in task-rules.js (kit v8),
+// An independent check of `settles` and `foldStep` in task-rules.js,
 // written from the header's words and the specification's table, not from the
 // rules' helpers. The expectations below are written out again here, so that
 // a rule and its test cannot share a mistake.

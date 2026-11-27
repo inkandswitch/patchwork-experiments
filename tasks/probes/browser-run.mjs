@@ -3,7 +3,7 @@
 // loads the BUILT package from dist/, mounts what a frame mounts of it (its
 // background component, which starts the page's pool host, found by its tag
 // in the package's plugin list, and its real titlebar tool) and asks through
-// the built task-client. Task
+// the built task client (the package's library). Task
 // code comes from data: URLs and from a file served here; the queue accepts
 // any code. No sync server is reached but by checks 24, 22, 26 to 30 and 40
 // to 42: the pages' Repos and the pool's work from the profile's shared database, and
@@ -252,7 +252,6 @@ for (const [name, spec] of Object.entries(vendor)) {
   writeFileSync(join(stubs, `${name}.js`), `export * from ${J(spec)};\n`);
   entryPoints[name] = join(stubs, `${name}.js`);
 }
-entryPoints["task-client"] = join(PKG, "src/task-client.js");
 await build({
   entryPoints,
   outdir: join(root, "vendor"),

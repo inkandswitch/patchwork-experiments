@@ -5,7 +5,7 @@
 //
 // - what the library gives is exactly the union of what task-client.js,
 //   task-rules.js and task-runs.js export, the union read from their source
-//   text, not from importing them; the one name two of them give is one value;
+//   text, not from importing them; no name is given by two of them;
 // - `mirror` with the pool's own library: a lookup made before the first
 //   snapshot resolves to the pool's own once it comes; later snapshots that
 //   change other plugins leave it registered once; an installed one updated
@@ -25,8 +25,6 @@ import { join } from 'node:path';
 import { encodeHeads, generateAutomergeUrl, parseAutomergeUrl, stringifyAutomergeUrl } from '@automerge/automerge-repo/slim';
 import { getRegistry as threadRegistry, PluginRegistry } from '@inkandswitch/patchwork-plugins';
 import * as client from './client.js';
-import * as asking from './task-client.js';
-import * as runs from './task-runs.js';
 import { POOL_COMPONENT_ID, QUEUE_DATATYPE_ID, TASKS_LIBRARY, TASKS_STORAGE_ID } from './ids';
 import { mirror, type Description } from './registry-snapshot';
 
@@ -66,17 +64,9 @@ describe('what the library gives', () => {
     expect(given).toBe(client);
   });
 
-  it('gives one value for the one name two files export, and no other name is exported twice', () => {
-    const seen = new Map<string, string[]>();
-    for (const file of FILES) {
-      for (const name of exportedBy(file)) {
-        seen.set(name, [...(seen.get(name) ?? []), file]);
-      }
-    }
-    const twice = [...seen].filter(([, files]) => files.length > 1);
-    expect(twice).toEqual([['findWhenThere', ['task-client.js', 'task-runs.js']]]);
-    expect(client.findWhenThere).toBe(asking.findWhenThere);
-    expect(runs.findWhenThere).toBe(asking.findWhenThere);
+  it('no name is exported by two of the files', () => {
+    const names = FILES.flatMap(exportedBy);
+    expect(names.length).toBe(new Set(names).size);
   });
 
   it("the ids the package's own plugins use are the library's", () => {

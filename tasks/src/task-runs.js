@@ -12,7 +12,7 @@
  * was asked, then the run's progress and results. The TASK that asks a
  * machine for it is keyed by the run document's url, so asking twice is
  * asking once; its input is `{ run: <that url> }`, its code is a file in the
- * package (`codeUrl`), and it says only whether a machine has the run.
+ * asking package, and it says only whether a machine has the run.
  *
  * What this file reads and writes of a run document; the rest is the package's:
  *
@@ -55,9 +55,7 @@
  * `stopWait` of the abort, whatever its runner is still waiting on.
  */
 
-import { ask, cancel, findWhenThere, inSamePackage, served } from './task-client.js';
-
-export { findWhenThere };
+import { ask, cancel, findWhenThere, served } from './task-client.js';
 import { BEAT_MS, GRACE_MS, allHeard, isOpen, isTask, recordsOf, taskError, taskState, waitingWork } from './task-rules.js';
 
 /** @typedef {import('./task-rules.js').Task} Task */
@@ -166,38 +164,6 @@ export function markInterrupted(run, now) {
 
 // Asking (a page's side)
 
-/** @type {string | null} */
-let givenPackage = null;
-
-/**
- * Names this package (`automerge:<id>`) for code that isn't loaded from it
- * (tests, a probe in Node). Otherwise the url a task names its code by is
- * read from where this module was loaded.
- * @param {string | null} packageUrl
- */
-export function setPackageUrl(packageUrl) {
-  givenPackage = packageUrl;
-}
-
-/**
- * The url a task names the file at `path` in this package by. Throws a plain
- * sentence when this package can't be named.
- * @param {string} path  within the package: `daemon/run-task.mjs`
- * @returns {string}
- */
-export function codeUrl(path) {
-  const here = inSamePackage(import.meta.url, path);
-  if (here) {
-    return here;
-  }
-  if (givenPackage) {
-    return `/${encodeURIComponent(givenPackage)}/${path}`;
-  }
-  throw new Error(
-    "This copy of the tool wasn't loaded from its package, so it can't name the code that does its runs; open it from Patchwork.",
-  );
-}
-
 /**
  * Whether a document is a task queue: what a run's `server` names.
  * @param {unknown} doc
@@ -209,20 +175,20 @@ export const isQueue = (doc) => {
 
 /**
  * Asks a queue for a run: a task keyed by the run document's url, whose code
- * is the file at `code` in this package, with `{ run }` for its input. Then
- * records the task's url in the run document, in a change made with
- * `options` (its message, say). Asking again while the task is wanted is the
- * same task.
+ * is at `importUrl` (the asking package names its own file, with
+ * `inSamePackage`), with `{ run }` for its input. Then records the task's url
+ * in the run document, in a change made with `options` (its message, say).
+ * Asking again while the task is wanted is the same task.
  * @param {any} repo
  * @param {string} queueUrl
  * @param {any} runHandle  the run document's handle
- * @param {string} code  the run's code, within this package
+ * @param {string} importUrl  the run's code
  * @param {object} [options]  for the run document's change
  * @returns {Promise<string>} the task's url
  */
-export async function askRun(repo, queueUrl, runHandle, code, options) {
+export async function askRun(repo, queueUrl, runHandle, importUrl, options) {
   const { taskUrl } = await ask(repo, queueUrl, {
-    importUrl: codeUrl(code),
+    importUrl,
     input: { run: runHandle.url },
     key: runHandle.url,
   });

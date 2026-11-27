@@ -191,7 +191,12 @@ that one machine serves.
     by the sync server, and a run's ending waits for the server's acknowledgement. Measured on
     2026-11-25 (FACTS.md, "What a task writes"), that costs a run from about 0.2 s (10 KB) to
     0.5 s (5 MB) and 1.1–1.8 s (20 MB). A MessageChannel link between the host's Repo and each
-    thread would carry it directly. Waits on a case that needs it.
+    thread would carry it directly. Without one, a run's code on a host with no network cannot
+    open a document the host has in its storage and its thread does not: an openfoam scratch check
+    (2026-11-25) found the task document and waited on the run document it names, with
+    `findWhenThere` and with plain `find`. So a solver host restarted offline with a waiting run
+    does not run it until the network returns, which the no-network law does not allow; the link
+    would close it.
 - **A new worker for every run.** A worker is reused after a run that ended by itself, so code one
   task leaves running shares a thread with the next. Confining task code (an opaque-origin worker in
   a browser) requires fresh workers, and so does treating tasks as strangers to each other. Ending

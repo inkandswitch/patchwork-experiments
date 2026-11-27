@@ -2,9 +2,8 @@
 // and the helpers for a run kept in a document of its own. It is what the
 // library `tasks-next` gives (TASKS_LIBRARY in ids.ts), in a page and in every
 // pool, and what dist-node/task-client.mjs is for a Node program that is not a
-// pool. One name is given by two of the files, `findWhenThere`, which
-// task-runs.js hands on from task-client.js: the same function. The types
-// that more than one of them names are the same types, named here once.
+// pool. The types that more than one of them names are the same types,
+// named here once.
 /**
  * @typedef {import('./task-rules.js').Task} Task
  * @typedef {import('./task-rules.js').Queue} Queue

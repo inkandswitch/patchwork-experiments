@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// These tests attack the rules in task-rules.js (kit v5). The first half is a
+// These tests attack the rules in task-rules.js. The first half is a
 // table of every task the rules can be asked about with up to three records,
 // and checks each promise the header makes against expectations written out
 // here from the header's words, not from the helpers the rules use. Then the

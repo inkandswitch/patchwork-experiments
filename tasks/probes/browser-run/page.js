@@ -3,12 +3,13 @@
 // provider, and offers the harness `window.probe`: make the account and a
 // queue, mount what a frame mounts from the built package (its background
 // components, the titlebar tool) and its queue browser, and ask, watch and
-// stop tasks through the built task-client.
+// stop tasks through the built task client: the package's library
+// `tasks-next`, as a page's registry gives it.
 import { Repo, parseAutomergeUrl } from '@automerge/automerge-repo/slim';
 import { IndexedDBStorageAdapter } from '@automerge/automerge-repo-storage-indexeddb';
 import { decodeChange, getActorId, getAllChanges, initializeWasm } from '@automerge/automerge/slim';
 import { initSync, SedimentreeId } from '@automerge/automerge-subduction/slim';
-import * as client from '/vendor/task-client.js';
+import { plugins } from '/dist/index.js';
 
 // Nothing listens here, and no document leaves this machine. This tab's Repo
 // and the pool's work from the shared database alone; each run worker's
@@ -27,6 +28,7 @@ import * as client from '/vendor/task-client.js';
 // are joined as the site's tabs are: their site Repos share one database
 // (`probe-site`) and one heads channel (`probe-site-heads`), and nothing else
 // (checks 41 and 42).
+const client = await plugins.find((p) => p.id === 'tasks-next').load();
 const params = new URLSearchParams(location.search);
 const SYNC = params.get('sync') ?? 'ws://127.0.0.1:9';
 

@@ -553,8 +553,7 @@ it. What none of them shows yet is said at the end of Tests and probes.
 A package never imports this one and carries no copy of its files: it asks the plugin registry
 for the library `tasks-next` (type `patchwork:library`; `TASKS_LIBRARY` in `src/ids.ts`). Its
 module, `src/client.js`, is everything `src/task-client.js`, `src/task-rules.js` and
-`src/task-runs.js` export (`findWhenThere`, which the first and the last both give, is one
-function). The lookup is in the realm's own registry and crosses no network. It is not pinned: it
+`src/task-runs.js` export. The lookup is in the realm's own registry and crosses no network. It is not pinned: it
 gives whichever package registered `tasks-next`, in the version installed where the code runs.
 
 A tool in a page gets the module as it mounts and keeps it until it closes. Where the tasks
