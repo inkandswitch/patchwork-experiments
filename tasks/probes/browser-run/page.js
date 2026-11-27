@@ -447,8 +447,9 @@ const probe = {
    * Makes a document with an empty `text`, asks for the task at `importUrl`
    * (probes/append-task.js) to append `pieces` to it, and keeps every text
    * this tab's Repo shows while it runs. Then what probes/append-check.js
-   * reads of the document, with what the task returned and the text this tab
-   * had when it heard the run end.
+   * reads of the document, with what the task returned, the text this tab
+   * had when it heard the run end, and how long after that it had the whole
+   * text (null if not within 2 s).
    */
   async append(importUrl, pieces, everyMs) {
     const handle = repo.create({ text: '' });
@@ -463,9 +464,12 @@ const probe = {
     const result = await client.run(repo, queueUrl(), { importUrl, input: { doc: handle.url, pieces, everyMs } }).catch((error) => ({ error: String(error?.message ?? error) }));
     const atEnd = handle.doc().text;
     const ms = performance.now() - t0;
+    const t1 = performance.now();
+    while (handle.doc().text !== pieces.join('') && performance.now() - t1 < 2000) await new Promise((r) => setTimeout(r, 5));
+    const wholeMs = handle.doc().text === pieces.join('') ? performance.now() - t1 : null;
     const { appendedHow, appendedWell } = await import('/append-check.js');
     const how = appendedHow(handle.doc(), pieces, seen, { decodeChange, getActorId, getAllChanges });
-    return { result, atEnd, ms, firstMs: firstAt === null ? null : firstAt - t0, well: appendedWell(how, pieces), ...how };
+    return { result, atEnd, wholeMs, ms, firstMs: firstAt === null ? null : firstAt - t0, well: appendedWell(how, pieces), ...how };
   },
 
   /**

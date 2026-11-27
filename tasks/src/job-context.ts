@@ -59,8 +59,8 @@ export interface TaskContext {
    * `find` aborting, end the asking at once. Everything else is the Repo's
    * own, and the Repo's own workings still use its own `find`.
    *
-   * What the code changes through it is saved before the run is said to have
-   * ended, and reaches others as the Repo syncs it.
+   * What the code changes through it the Repo saves and sends in its own
+   * time; the run is said to have ended as soon as the code returns.
    */
   repo: Repo;
   /** The task's own document. */

@@ -7,8 +7,8 @@
 // it imports the code, calls its default export with `(input, ctx)` and
 // `this` = ctx, and says what the code logs and reports, and then how it
 // ended. It never writes the task's document: the pool records everything,
-// from what this says. It says how the code ended once its Repo has saved
-// what the code wrote through `ctx.repo`; its Repo sends that on as it syncs.
+// from what this says. It says how the code ended as soon as it has; what
+// the code wrote through `ctx.repo` its Repo saves and sends in its own time.
 //
 // The same script runs on both platforms. What differs is behind
 // ./webworker-lib (a Repo, and how code is imported; the Node build puts
@@ -71,9 +71,9 @@ export type ToRunWorker =
 export type FromRunWorker =
   | { type: 'log'; message: string }
   | { type: 'progress'; value: unknown }
-  /** Its code returned this, and its Repo has saved what the code wrote. */
+  /** Its code returned this. */
   | { type: 'done'; result: unknown }
-  /** Its code threw, would not load, or what it wrote could not be saved. */
+  /** Its code threw or would not load. */
   | { type: 'threw'; message: string };
 
 /** The two ends of a run worker's one channel, whatever the platform calls them. */
@@ -147,7 +147,6 @@ export function serve(port: RunWorkerPort) {
   });
 
   async function runJob(job: Job, task: Uint8Array | undefined, signal: AbortSignal, settled: Promise<void>) {
-    let docs: Repo | null = null;
     let outcome: FromRunWorker;
     // Code can go on after it has returned or thrown (a timer, a promise it
     // did not wait for), and the worker may by then have the next job: what
@@ -162,7 +161,7 @@ export function serve(port: RunWorkerPort) {
       if (!repo) {
         throw new Error('its worker was handed a job before it was set up');
       }
-      docs = await repo;
+      const docs = await repo;
       if (task) {
         docs.import(task, { docId: documentIdOf(job.taskUrl) });
       }
@@ -186,14 +185,6 @@ export function serve(port: RunWorkerPort) {
       outcome = { type: 'done', result: await fn.call(ctx, job.input, ctx) };
     } catch (error) {
       outcome = { type: 'threw', message: messageOf(error) };
-    }
-    if (docs) {
-      try {
-        await docs.flush();
-      } catch (error) {
-        // what it wrote is not safe yet, so it is not done
-        outcome = { type: 'threw', message: `what its code wrote could not be saved: ${messageOf(error)}` };
-      }
     }
     over = true;
     say(outcome);

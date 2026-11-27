@@ -1450,9 +1450,9 @@ try {
       } else {
         const got = await S.js(`probe.append(${J(APPEND)}, ${J(pieces)}, 400)`, 120_000);
         check(
-          `22 a browser's run worker runs append-task.js unchanged, through the page's import map, appending each piece to the end of a text the page sees grow (through ${SYNC_SERVER})`,
-          !!running && !!joined?.served && got.result === pieces.length && got.atEnd === pieces.join("") && got.well,
-          `pool running ${!!running}, joined ${J(joined)}; returned ${J(got.result)} in ${got.ms.toFixed(0)} ms, the first piece seen after ${got.firstMs === null ? "never" : `${got.firstMs.toFixed(0)} ms`}; text when the ending was heard ${J(got.atEnd)}; the task's changes ${got.changes} for ${pieces.length} pieces, ${got.endAppends} of them appends at the end${got.notAppend ? `, first not: ${J(got.notAppend)}` : ""}; every text seen a run of whole pieces from the start: ${got.prefixes}; lengths seen on the way ${J(got.between)} of ${J(sums)}`,
+          `22 a browser's run worker runs append-task.js unchanged, through the page's import map, appending each piece to the end of a text the page sees grow, whole within 2 s of the ending (through ${SYNC_SERVER})`,
+          !!running && !!joined?.served && got.result === pieces.length && got.wholeMs !== null && got.well,
+          `pool running ${!!running}, joined ${J(joined)}; returned ${J(got.result)} in ${got.ms.toFixed(0)} ms, the first piece seen after ${got.firstMs === null ? "never" : `${got.firstMs.toFixed(0)} ms`}; text when the ending was heard ${J(got.atEnd)}, whole ${got.wholeMs === null ? "not within 2 s" : `${got.wholeMs.toFixed(0)} ms after`}; the task's changes ${got.changes} for ${pieces.length} pieces, ${got.endAppends} of them appends at the end${got.notAppend ? `, first not: ${J(got.notAppend)}` : ""}; every text seen a run of whole pieces from the start: ${got.prefixes}; lengths seen on the way ${J(got.between)} of ${J(sums)}`,
         );
       }
     } finally {

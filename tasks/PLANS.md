@@ -6,15 +6,16 @@ known, so it can be picked up without finding it out again.
 ## Latency and throughput
 
 A task that does nothing, asked by a Node process of a Node host on the same Mac through the sync
-server (about 75 ms a round trip), takes about 750 ms from asking to the asker having the result:
-median 747–758 ms, worst 813–835 ms (`probes/node-run.mjs --only 1,16`, 2026-11-25); in two runs
-of the whole probe on a machine shared with other work, 798 / 978 and 893 / 1574. The browser pool
-on its stand-in page, asked from that page, takes 19.2 ms (worst 26.4 ms, 2026-11-27, its run worker flushing its Repo once per run). Throughput, many quick
-tasks at once, has not been measured with the pool.
+server (about 75 ms a round trip), takes about 650 ms from asking to the asker having the result:
+median 653–655 ms, worst 726–765 ms (`probes/node-run.mjs --only 1` with its loop at 30 asks, two
+runs, 2026-11-27). The browser pool on its stand-in page, asked from that page, takes 11.5–11.6 ms
+(worst 17.0–18.3 ms; check 1 with its loop at 40 asks, with and without the network,
+2026-11-27). Throughput, many quick tasks at once, has not been measured with the pool.
 
 ### Where the time goes
 
-Every step traced on one clock, 20 tasks one at a time on a warm host (median / worst, ms):
+Every step traced on one clock, 20 tasks one at a time on a warm host (median / worst, ms; traced
+while the thread still saved before its run was reported):
 
 | Step | ms | What it waits on |
 |---|---|---|
@@ -29,8 +30,13 @@ Every step traced on one clock, 20 tasks one at a time on a warm host (median / 
 | **Asked to taken / taken to ended / ended to the asker** | **366 / 107 / 258** | |
 | **Total** | **717 / 830** | |
 
-A thread that saves nothing (check 1: 3–5 ms in the thread, against 54–56) does not shorten the
-total: the end then waits for the claim's round instead.
+The thread no longer saves before its run is reported: 4 ms in the thread, against 53–56 with the
+save (30 asks each). The total falls by only about 35 ms (686–690 → 653–655 ms): the end then waits
+for the claim's round instead (ended to the asker 233–236 → 249–253 ms).
+
+In the browser the same save, of the imported task document, cost 2.0–2.2 ms a run (worst 3.8;
+40 asks traced on the stand-in). The deployed site's no-op ask through its own Repo (about 210 ms
+in most sessions, 101–104 ms in others) has not been traced step by step.
 
 ### The floor, and what stands above it
 
@@ -93,7 +99,8 @@ after the document was sent; looking again only at the next beat took 3.6 s. A R
   ending it; a fresh host's first task, with its thread's start (65–98 ms), measured the same as a
   warm one only with the pool's forced writes gone. The second loosens "saved before its code is
   called" for under 2 ms.
-- **The Repo's save throttle.** Not on the path: every step flushes.
+- **The Repo's save throttle.** Not on the path: the pool flushes its claim and its end, and
+  nothing waits for the thread's saves.
 
 ### Measuring it again
 
@@ -130,10 +137,14 @@ that one machine serves.
     and loads a stored one only when something asks for it. So what a worker or a page wrote but
     had not sent before a reload or a restart (with no network, or a worker ended with its run or
     stopped mid-run) is not sent until something opens it. A design bug is being logged with Subduction.
-  - *Holding a run's ending until others have its writes.* A run is reported once its worker's
-    Repo has saved what it wrote; the page and the sync server have it as the Repos sync it. With
-    no network, a page reloaded the instant a run ends may lack the run's writes, which then wait
-    in the run worker's storage on the bug above.
+  - *Holding a run's ending until others have its writes.* A run is reported when its code
+    returns; its worker's Repo saves and sends what it wrote in its own time (each throttled, by
+    default to at most 100 ms after a change). A worker kept for the next run keeps its Repo and
+    sends it on. One ended right after its report loses what neither its storage nor the page
+    (or, on a Node host, the sync server) had yet: a stopping run that returns is ended at once,
+    idle workers are ended when the pool stops, and the pool's worker with its page. With no
+    network, a page reloaded the instant a run ends may also lack the run's writes. Saving before
+    a worker ends is the Repo's to hold.
   - *Deciding what a worker may be given.* The pipe carries what the site's Repo shares with a
     peer; what a worker may have is the Repo's and keyhive's to decide.
 - **What the pipe still lacks.**

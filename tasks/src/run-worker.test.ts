@@ -1,7 +1,7 @@
 // The run worker's side of a job, with its port and its platform faked: every
-// way a job can end says exactly one `done` or `threw`, after what the code
-// wrote is saved, and nothing the code says after that reaches the pool. The
-// fake Repo has a private field, as the real Repo's methods have.
+// way a job can end says exactly one `done` or `threw`, as soon as it has
+// ended, and nothing the code says after that reaches the pool. The fake Repo
+// has a private field, as the real Repo's methods have.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FromRunWorker, ToRunWorker } from './run-worker';
@@ -11,11 +11,8 @@ import type { Job } from './pool';
 let events: string[];
 let said: FromRunWorker[];
 let modules: Record<string, unknown>;
-let flushFails: boolean;
 let repoFails: boolean;
 let imported: { docId: string; bytes: Uint8Array }[];
-/** What each save named: its documents, or 'all'. */
-let flushes: (string[] | 'all')[];
 let calls: string[];
 /** How the next Repo is made: whether it records every use. */
 let made: { recorded: boolean };
@@ -57,12 +54,8 @@ class FakeRepo {
     imported.push({ docId: args.docId, bytes });
     this.byId[args.docId] = new FakeHandle(args.docId);
   }
-  async flush(ids?: string[]) {
+  async flush() {
     events.push('flush');
-    flushes.push(ids ? [...ids] : 'all');
-    if (flushFails) {
-      throw new Error('disk full');
-    }
   }
   create(value: unknown = {}) {
     const id = `doc${Object.keys(this.byId).length + 1}`;
@@ -96,7 +89,7 @@ vi.mock('./webworker-lib', () => ({
     if (!made.recorded) {
       return theRepo;
     }
-    // Records every use: the run worker imports the task and flushes.
+    // Records every use: the run worker imports the task.
     return new Proxy(theRepo, {
       get(target, name) {
         calls.push(String(name));
@@ -146,10 +139,8 @@ beforeEach(() => {
   events = [];
   said = [];
   modules = {};
-  flushFails = false;
   repoFails = false;
   imported = [];
-  flushes = [];
   calls = [];
   made = { recorded: false };
 });
@@ -172,7 +163,7 @@ describe('a run worker', () => {
     tell({ type: 'job', job: job('ok') });
     await settle();
     expect(seen).toEqual({ self: true, input: { n: 1 }, run: 'run-1', key: 'k', taskUrl: job('ok').taskUrl });
-    expect(events).toEqual(['flush', 'done']);
+    expect(events).toEqual(['done']);
     expect(said).toEqual([{ type: 'done', result: { doubled: 2 } }]);
   });
 
@@ -186,11 +177,11 @@ describe('a run worker', () => {
     await settle();
     expect(imported).toEqual([{ docId: '2KYqboWHPS5rvWsheoLnHgFvE7ou', bytes }]);
     // `then` is the promise machinery asking whether the Repo is itself a promise.
-    expect(new Set(calls)).toEqual(new Set(['then', 'import', 'flush']));
+    expect(new Set(calls)).toEqual(new Set(['then', 'import']));
   });
 
   // Each way the code can fail ends in one `threw`, never in silence, and
-  // after the save of what it may have written.
+  // and without saving first.
   const failures: [string, unknown, RegExp][] = [
     ['code that will not import', undefined, /cannot find/],
     ['a module with no default export', { other: () => 1 }, /no default export/],
@@ -212,7 +203,7 @@ describe('a run worker', () => {
       expect(endings()).toHaveLength(1);
       expect(endings()[0].type).toBe('threw');
       expect((endings()[0] as { message: string }).message).toMatch(message);
-      expect(events.filter((it) => it === 'flush' || it === 'threw')).toEqual(['flush', 'threw']);
+      expect(events.filter((it) => it === 'flush' || it === 'threw')).toEqual(['threw']);
     });
   }
 
@@ -506,25 +497,14 @@ describe('ctx.settled, as a checker attacks it', () => {
   });
 });
 
-describe('a run saves what its code wrote', () => {
-  it('saves once, after the code returns and before it says done', async () => {
+describe('what a run wrote is left to its Repo', () => {
+  it('says done as soon as the code returns, without waiting for a save', async () => {
     modules.ok = { default: (_: unknown, ctx: any) => ctx.repo.create({ x: 1 }).documentId };
     const tell = start();
     tell(settings);
     tell({ type: 'job', job: job('ok'), task: new Uint8Array([1]) });
     await settle();
-    expect(flushes).toEqual(['all']);
-    expect(events).toEqual(['flush', 'done']);
-  });
-
-  it('says threw when what the code wrote cannot be saved, though it returned', async () => {
-    flushFails = true;
-    modules.ok = { default: () => 1 };
-    const tell = start();
-    tell(settings);
-    tell({ type: 'job', job: job('ok') });
-    await settle();
-    expect(endings()).toEqual([{ type: 'threw', message: expect.stringMatching(/could not be saved: disk full/) }]);
+    expect(events).toEqual(['done']);
   });
 });
 
