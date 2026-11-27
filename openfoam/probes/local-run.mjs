@@ -102,7 +102,7 @@ if (d.summary) {
     Re: s.Re.toExponential(3), Fn: s.Fn.toFixed(3), yPlus: s.yPlus, iterations: s.iterations, power: (s.power / 1000).toFixed(2) + " kW",
   });
   for (const [name, url] of Object.entries(d.layers)) {
-    const L = decodeLayer(await internalize(repo, (await repo.find(url)).doc(), { find: (rp, u) => rp.find(u) }));
+    const L = decodeLayer(await internalize(repo, (await repo.find(url)).doc(), { find: tasks.findWhenThere }));
     const sizes = Object.entries(L.fields).map(([k, v]) => `${k}[${L.ranges[k]?.map((x) => x.toPrecision(3)).join("…")}]`);
     console.log(`  layer ${name.padEnd(12)} ${L.kind} ${L.positions.length / 3} pts ${L.indices ? L.indices.length / 3 + " tris" : L.counts.length + " lines"} ${sizes.join(" ")}`);
   }
@@ -111,7 +111,7 @@ if (d.volume) {
   // the kept volume, read back: the mesh and pressure, parsed, against checkMesh's cell count
   const { readVolume, parseFoam } = await import("../src/volume.js");
   const vd = (await repo.find(d.volume.url)).doc();
-  const r = await readVolume(repo, vd, { mesh: ["owner", "neighbour"], fields: ["p"], find: (rp, u) => rp.find(u) });
+  const r = await readVolume(repo, vd, { mesh: ["owner", "neighbour"], fields: ["p"], find: tasks.findWhenThere });
   let cells = 0, ps = 0;
   r.mesh.owner.forEach((b, i) => {
     let n = 0;

@@ -356,7 +356,6 @@ async function addRun(repo, { tasks, caseHandle, serverHandle, run, message }) {
     x.runs.push(rh.url);
     x.selected = rh.url;
   }, opts);
-  const { taskUrl } = await tasks.ask(repo, serverHandle.url, { importUrl, input: { run: rh.url }, key: rh.url });
-  rh.change((d) => void (d.task = taskUrl), opts);
+  await tasks.askRun(repo, serverHandle.url, rh, importUrl, opts);
   return rh;
 }

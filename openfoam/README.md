@@ -386,12 +386,15 @@ which this package asks the plugin registry for and never carries a copy of.
 The case and run tools get it as they mount and keep it until they close;
 where the Tasks package isn't installed, each says "OpenFOAM needs the Tasks
 package, which is not installed here." and nothing else, and carries on when
-it arrives. The agent's tools refuse with the same sentence at once. The run's
+it arrives. The agent's tools refuse with the same sentence at once. A
+scene's build of an OpenFOAM source waits for it and says nothing, since a
+build has no place to say why. The run's
 task code (`daemon/run-task.mjs`) gets it when it runs: every tasks host has
 it, from its own build where nothing else is installed. The client joins a
 run doc to its task (cancelling, the guard that never starts a run twice,
 the task code around the runner); this package names its run's code itself
-(`inSamePackage(import.meta.url, RUN_CODE)` in `src/case-model.js`). The
+(`inSamePackage(import.meta.url, RUN_CODE)` in `src/case-model.js`) and asks
+for it with the client's `askRun`. The
 status a person sees is the run doc's, or, where nobody wrote it (cancelled
 before it started, a machine that stopped for good), its task's
 (`shownRun`).

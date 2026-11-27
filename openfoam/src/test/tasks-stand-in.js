@@ -28,11 +28,13 @@ export function standInTasks({ packageUrl = "automerge:openfoamTestPackage", poo
       tasks.froms.push(from);
       return tasks.packageUrl ? `/${encodeURIComponent(tasks.packageUrl)}/${path}` : null;
     },
-    async ask(repo, queueUrl, a) {
+    async askRun(repo, queueUrl, run, importUrl, options) {
+      const a = { importUrl, input: { run: run.url }, key: run.url };
       const task = await repo.create2({ ...a, runs: [] });
       (await repo.find(queueUrl)).change((q) => void (q.jobs[a.key] = { taskUrl: task.url }));
       tasks.asked.push({ queueUrl, ...a });
-      return { key: a.key, taskUrl: task.url };
+      run.change((d) => void (d.task = task.url), options);
+      return task.url;
     },
     async cancelRun(repo, run, url) {
       tasks.stops.push(url);

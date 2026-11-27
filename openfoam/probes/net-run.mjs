@@ -118,8 +118,7 @@ let queueUrl;
 async function ask(title, setupPatch = {}, hull = { stl: prep.stl, info: prep.info, warnings: prep.warnings }) {
   const setup = normalizeSetup({ ...defaultSetup(), mode: "double-body", mesh: "coarse", speed: { value: 6, unit: "kn" }, stop: "iterations", iterations: 2000, ...setupPatch });
   const run = await repo.create2(newRun({ caseUrl: "automerge:net-probe", serverUrl: queueUrl, setup, hull: { ...hull, source: { title: "narrow-transom.glb" } }, by: "net probe", now: Date.now(), title: `net probe · ${title}` }));
-  const { taskUrl } = await tasks.ask(repo, queueUrl, { importUrl: `/${encodeURIComponent(PACKAGE)}/${RUN_CODE}`, input: { run: run.url }, key: run.url });
-  run.change((d) => void (d.task = taskUrl));
+  const taskUrl = await tasks.askRun(repo, queueUrl, run, `/${encodeURIComponent(PACKAGE)}/${RUN_CODE}`);
   await repo.flush?.();
   say(`asked for "${title}": run ${run.url}, task ${taskUrl}`);
   let last = "";
