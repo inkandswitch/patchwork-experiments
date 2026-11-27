@@ -40,14 +40,8 @@ export const TRAY_COMPONENT_ID = 'task-tray-next';
  */
 export const WAIT_TASK_PATH = 'dist/tasks/wait.js';
 
-// The task system's Repos, in the workers and in each tab, keep their
-// documents in a database of their own and tell each other what they've saved
-// on a channel of their own, rather than sharing the site's. That makes them
-// one family: what any of them saves, the rest have a moment later, with or
-// without a network. It's also what keeps them apart from the site's own Repo,
-// which on a keyhive site is no ordinary one.
+// The pool's worker keeps its documents in a database of its own, rather than the site's.
 export const TASKS_DATABASE = 'patchwork-tasks';
-export const TASKS_HEADS_CHANNEL = 'patchwork-tasks-heads';
 
 /** How the peer id of a browser worker's Repo starts: the site's Repo offers such a peer nothing (browser/pool-host.ts). */
 export const WORKER_PEER = 'task-worker-';

@@ -7,7 +7,7 @@ import type { Queue } from './datatype';
 import { getAccountDocUrl, getTaskQueues } from './helpers';
 import { ownQueue, ownQueueOf, storageUrlOf, type TasksStorage } from './task-client.js';
 import { QUEUE_TOOL_ID } from './ids';
-import { useDoc, WithTasksRepo } from './use-doc';
+import { useDocSignal } from '@automerge/automerge-repo-solid-primitives';
 import { waitingWork } from './task-rules.js';
 import { watchPoolHost, NOT_STARTED, type PoolHostStatus } from './browser/pool-host';
 import { poolWords } from './pool-words';
@@ -41,12 +41,9 @@ function mountTaskStatus(element: HTMLElement, hostRepo: Repo) {
 }
 
 const TaskStatus = (props: { element: HTMLElement; hostRepo: Repo; pool: PoolHostStatus }) => {
-  // The account and the task storage it names are the site's documents, so
-  // they come from the site's Repo. The queues come from this tab's tasks
-  // Repo (see tasks-repo.ts).
-  const account = useDoc<unknown>(getAccountDocUrl, props.hostRepo);
-  const storageUrl = () => storageUrlOf(account()) as AutomergeUrl | null;
-  const storage = useDoc<TasksStorage>(storageUrl, props.hostRepo);
+  const [account] = useDocSignal<object>(getAccountDocUrl, { repo: props.hostRepo });
+  const storageUrl = () => (storageUrlOf(account()) as AutomergeUrl | null) ?? undefined;
+  const [storage] = useDocSignal<TasksStorage>(storageUrl, { repo: props.hostRepo });
   /** Whether what is served is known: the account has loaded, and the storage it names, if any. */
   const known = () => !!account() && (!storageUrl() || !!storage());
   const queueUrls = () => Object.keys(getTaskQueues(storage())) as AutomergeUrl[];
@@ -66,20 +63,18 @@ const TaskStatus = (props: { element: HTMLElement; hostRepo: Repo; pool: PoolHos
 
   return (
     <div class="task-titlebar-list">
-      <WithTasksRepo>
-        <For
-          each={queueUrls()}
-          fallback={
-            <Show when={making()}>
-              <span class="task-titlebar task-titlebar--none">Making your queue…</span>
-            </Show>
-          }
-        >
-          {(taskQueueUrl) => (
-            <QueueBadge element={props.element} taskQueueUrl={taskQueueUrl} pool={props.pool} />
-          )}
-        </For>
-      </WithTasksRepo>
+      <For
+        each={queueUrls()}
+        fallback={
+          <Show when={making()}>
+            <span class="task-titlebar task-titlebar--none">Making your queue…</span>
+          </Show>
+        }
+      >
+        {(taskQueueUrl) => (
+          <QueueBadge element={props.element} hostRepo={props.hostRepo} taskQueueUrl={taskQueueUrl} pool={props.pool} />
+        )}
+      </For>
       <Show when={known() && own() && !queueUrls().includes(own()!)}>
         <button
           class="task-titlebar task-titlebar--offer"
@@ -99,8 +94,8 @@ const TaskStatus = (props: { element: HTMLElement; hostRepo: Repo; pool: PoolHos
   );
 };
 
-const QueueBadge = (props: { element: HTMLElement; taskQueueUrl: AutomergeUrl; pool: PoolHostStatus }) => {
-  const queue = useDoc<Queue>(() => props.taskQueueUrl);
+const QueueBadge = (props: { element: HTMLElement; hostRepo: Repo; taskQueueUrl: AutomergeUrl; pool: PoolHostStatus }) => {
+  const [queue] = useDocSignal<Queue>(() => props.taskQueueUrl, { repo: props.hostRepo });
   return (
     <Show when={queue()}>
       {(doc) => {

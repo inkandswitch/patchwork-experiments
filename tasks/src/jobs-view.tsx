@@ -11,7 +11,7 @@ import { isFinished, satisfies, waitingWork } from './task-rules.js';
 import { ask, cancel, watch, type Ask, type Serving, type TaskView } from './task-client.js';
 import { inSamePackage } from './import-url';
 import { WAIT_TASK_PATH } from './ids';
-import { useRepo } from './use-doc';
+import { useRepo } from '@automerge/automerge-repo-solid-primitives';
 import { MAX_SOURCE_CHARS, showValue, TaskCode } from './task-code';
 
 /** How many listed tasks to show. */

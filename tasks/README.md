@@ -407,7 +407,8 @@ no page above it (a Node host's thread) has no pipe.
 | On one device with no network | |
 |---|---|
 | Making your own queue; the pool starting | works: making writes in the page's Repo and waits on nothing, and the pool starts and serves it |
-| A tool's work (`doWork`), run by this browser's pool, its progress and result | works: asked of the person's own queue through the site's Repo and run by this browser's pool, from the tab that runs the pool (by the pipe) and from any other tab of the browser (its site Repo shares a database and a heads channel with that tab's; the pool's messages reach it on the task system's own BroadcastChannel, not through its site Repo); also through the task system's own Repo (`tasks-repo.ts`, as the queue browser asks) |
+| A tool's work (`doWork`), run by this browser's pool, its progress and result | works: asked of the person's own queue through the site's Repo and run by this browser's pool, from the tab that runs the pool (by the pipe) and from any other tab of the browser (its site Repo shares a database and a heads channel with that tab's; the pool's messages reach it on the task system's own BroadcastChannel, not through its site Repo) |
+| The queue browser and the badge | work: they read and write through the Repo the site hands the tool, the one the pool is piped to, so they show what the pool does and what runs wrote |
 | What a pool-run task writes into a document the page has open | reaches the site's Repo in the tab that runs the pool over the pipe, within milliseconds of the run's ending (browser-run check 27); the site's other tabs have it as they have that tab's own changes (check 41). A page reloaded before its Repo saved it, or closed before its Repo sent it, is the Repo's to answer (PLANS, "Left to the Repo") |
 | Work that needs a device this browser is not (`needs: ['node']`, another browser's `pool:` id) | waits in the queue until one of the person's machines that has it can be reached, and the queue browser says what it waits for; where this browser does not have the list of the person's queues (the account names a storage document that has not arrived), `doWork` looks for it as `findWhenThere` does, about half a minute, and then rejects with "The list of your task queues could not be found, so nothing was changed.", having asked nothing |
 | Getting the task client | works: a lookup in the realm's own registry (a page's, a run worker's, a run thread's); a pool always has its own build's; a Node program that is not a pool imports `dist-node/task-client.mjs` from disk. Where the tasks package is not installed in this browser, a tool that asks finds none, says so in a sentence of its own, does nothing else, and carries on when the package arrives |
@@ -597,10 +598,9 @@ processes and say what they saw, one line per check or measurement:
   sees that under the site's provider own exists within 30 s, its url key is `true`, and the
   pool serves it (whether or not the site's frame made it first).
   Then: the pool worker and the run workers load from the package through the site's service
-  worker; ten do-nothing tasks are asked through this tab's tasks Repo and ten through the
-  site's own (keyhive) Repo; the package's own task module, a throw, a spin cancelled and its
+  worker; ten do-nothing tasks are asked through the site's own (keyhive) Repo; the package's own task module, a throw, a spin cancelled and its
   run worker gone, `served()`, and the queue browser's and badge's
-  lines; documents tasks write reach the site's Repo and this tab's tasks Repo within 30 s;
+  lines; documents tasks write reach the site's Repo within 30 s;
   `doWork`, `watchWork` and `stopWork` from the page.
 - `probes/append-run.mjs` (after `pnpm build:node`): a Node host, through the real sync server,
   runs `probes/append-task.js` as a `--local` file and as a `data:` URL; the asker sees the text

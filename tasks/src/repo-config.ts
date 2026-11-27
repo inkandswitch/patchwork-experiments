@@ -1,4 +1,4 @@
-/** What a Repo of the task system needs to be built (see webworker-lib.ts and tasks-repo.ts). */
+/** What a Repo of the task system needs to be built (see webworker-lib.ts). */
 export interface RepoConfig {
   /** The Subduction sync server this site's tabs are connected to. */
   syncServerUrl: string;
@@ -10,7 +10,7 @@ export interface RepoConfig {
 const DEFAULT_SYNC_SERVER_URL = 'wss://subduction.sync.inkandswitch.com';
 const SYNC_SERVER_URL_KEY = 'tasksSyncServerUrl';
 
-/** What a member of the tasks Repo family needs to be built: see webworker-lib.ts and tasks-repo.ts. */
+/** What the pool's Repos need to be built: see webworker-lib.ts. */
 export function getRepoConfig(): RepoConfig {
   return {
     syncServerUrl: localStorage.getItem(SYNC_SERVER_URL_KEY) || DEFAULT_SYNC_SERVER_URL,

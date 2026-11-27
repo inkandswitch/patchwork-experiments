@@ -13,7 +13,7 @@ const unwatched: string[] = [];
 /** What a key's task reads, where it is more than a waiting task with no input. */
 const views: Record<string, object> = {};
 
-vi.mock('./use-doc', () => ({ useRepo: () => ({}) }));
+vi.mock('@automerge/automerge-repo-solid-primitives', () => ({ useRepo: () => ({}) }));
 vi.mock('./task-client.js', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   ask: async () => ({}),

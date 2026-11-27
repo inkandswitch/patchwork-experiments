@@ -74,6 +74,7 @@ const vendor = {
   "automerge-subduction-slim": "@automerge/automerge-subduction/slim",
   "solid-js": "solid-js",
   "solid-js-web": "solid-js/web",
+  "solid-js-store": "solid-js/store",
 };
 const entryPoints = {};
 for (const [name, spec] of Object.entries(vendor)) {

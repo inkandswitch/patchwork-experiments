@@ -47,8 +47,6 @@ const repo = new Repo({
   headsChannel: 'patchwork-tasks-heads',
   enableRemoteHeadsGossiping: true,
 });
-// The hook tasks-repo.ts leaves for a page that has a Repo of the family already.
-window.patchworkTasks = { repo: Promise.resolve(repo) };
 
 const site = params.has('site')
   ? new Repo({

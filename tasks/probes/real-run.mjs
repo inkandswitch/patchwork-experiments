@@ -9,7 +9,7 @@
 // pressed (unless the site's frame, mounting the package's background
 // component itself, made it first), and the pool serves it. That queue is
 // then asked for tasks through the client (src/task-client.js, bundled here
-// and put on the page), from this tab's tasks Repo and from the site's own.
+// and put on the page), through the site's Repo.
 //
 // What only the real site has, and this checks: the site's Repo (a keyhive
 // one) beside the task system's plain ones; its import map; code kept in
@@ -129,9 +129,9 @@ b.on((m) => {
 const kind = (url) => (/pool-worker-[\w-]+\.js/.test(url) ? "pool" : /run-worker-entry-[\w-]+\.js/.test(url) ? "run" : "other");
 const live = (k) => [...workers.values()].filter((w) => kind(w.url) === k && !w.gone);
 
-/** Runs `body` in the page with C (the client), T (this tab's tasks Repo), site (the site's own Repo) and Q (the queue's url). */
+/** Runs `body` in the page with C (the client), T and site (the site's Repo) and Q (the queue's url). */
 const call = (body, what, ms = 60_000) =>
-  js(`(async () => { const C = window.taskClient; const T = await window.patchworkTasks.repo; const site = window.repo; const Q = window.__probe.queueUrl; ${body} })()`, what, ms);
+  js(`(async () => { const C = window.taskClient; const site = window.repo; const T = site; const Q = window.__probe.queueUrl; ${body} })()`, what, ms);
 const status = () => js("Object.values(window.patchworkTasks?.poolHosts ?? {})[0]?.status() ?? null");
 const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 const round = (x) => Math.round(x);
@@ -265,25 +265,24 @@ try {
     check("the queue browser opens the queue, and says this tab runs the pool", opened && typeof here === "string" && /This tab runs this browser's pool/.test(here), { opened, here });
   });
 
-  // 1. a do-nothing task, ask to result: from this tab's tasks Repo, and from the site's own.
-  await part("a do-nothing task, ten in a row, from this tab's tasks Repo", async () => {
+  // 1. a do-nothing task, ask to result.
+  await part("a do-nothing task, ten in a row, asked through the site's own Repo", async () => {
     // A pool takes nothing until it has listened to the queue for LISTEN_MS.
     await new Promise((r) => setTimeout(r, Math.max(0, poolRunningAt + LISTEN_MS - Date.now())));
     const NOOP = J(`data:text/javascript,${encodeURIComponent("export default () => 1;")}`);
     const times = await call(`
-      const out = { tasks: [], site: [], errors: {} };
+      const out = { site: [], errors: {} };
       const once = (repo) => Promise.race([C.run(repo, Q, { importUrl: ${NOOP} }), new Promise((_, no) => setTimeout(() => no(new Error("no result in 30 s")), 30000))]);
-      for (const [name, repo] of [["tasks", T], ["site", site]]) {
+      for (const [name, repo] of [["site", site]]) {
         for (let i = 0; i < 11; i++) {
           const t0 = performance.now();
           try { await once(repo); out[name].push(performance.now() - t0); } catch (e) { out.errors[name] = String(e.message ?? e); break; }
         }
         out[name].shift(); // the first may start a run worker
       }
-      return out;`, "ten do-nothing tasks from each Repo", 200_000);
+      return out;`, "ten do-nothing tasks", 200_000);
     const stat = (xs) => (xs.length ? { n: xs.length, median: round(median(xs)), worst: round(Math.max(...xs)), all: xs.map(round) } : { n: 0 });
-    report.latency = { tasksRepo: stat(times.tasks), siteRepo: stat(times.site), errors: times.errors };
-    check("a do-nothing task, ten in a row, from this tab's tasks Repo", times.tasks.length === 10, report.latency);
+    report.latency = { siteRepo: stat(times.site), errors: times.errors };
     check("a do-nothing task, ten in a row, asked through the site's own Repo (as every ordinary tool asks)", times.site.length === 10, report.latency);
     report.runWorkers = [...workers.values()].filter((w) => kind(w.url) === "run").map((w) => new URL(w.url).pathname);
     check(
@@ -356,9 +355,8 @@ try {
   });
 
   // 7. a document a task writes through ctx.repo reaches the page, within
-  // 30 s of the run's ending: the site's Repo through the pipe, and this
-  // tab's tasks Repo by the sync server.
-  await part("a document a task writes through ctx.repo reaches the page by the sync server: this tab's tasks Repo and the site's Repo both have it", async () => {
+  // 30 s of the run's ending: the site's Repo, through the pipe.
+  await part("a document a task writes through ctx.repo reaches the page through the pipe: the site's Repo has it", async () => {
     const WRITES = J(`data:text/javascript,${encodeURIComponent("export default async (input, ctx) => { const doc = ctx.repo.create({ wrote: input.tag }); doc.change((d) => { d.changed = true; }); return doc.url; };")}`);
     const runWorkersBefore = new Set([...workers.keys()]);
     // Two at once, so that one of them runs in a run worker started for it,
@@ -379,14 +377,14 @@ try {
           }
           return null;
         };
-        return { url, ran: Math.round(ran), runLog: (last?.runs?.at(-1)?.logs ?? []).map((l) => l.message), tasksRepo: await arrives(T), siteRepo: await arrives(site) };
+        return { url, ran: Math.round(ran), runLog: (last?.runs?.at(-1)?.logs ?? []).map((l) => l.message), siteRepo: await arrives(site) };
       };
       return await Promise.all([one("seven"), one("eight")]);`, "documents tasks write", 120_000);
     const inNewRunWorker = [...workers.entries()].some(([id, w]) => kind(w.url) === "run" && !runWorkersBefore.has(id));
     report.writes = { runs: out, inNewRunWorker };
     check(
-      "a document a task writes through ctx.repo reaches the page within 30 s: the site's Repo (through the pipe) and this tab's tasks Repo both have it",
-      out.every((o) => typeof o.url === "string" && o.url.startsWith("automerge:") && o.tasksRepo !== null && o.siteRepo !== null),
+      "a document a task writes through ctx.repo reaches the page within 30 s: the site's Repo has it (through the pipe)",
+      out.every((o) => typeof o.url === "string" && o.url.startsWith("automerge:") && o.siteRepo !== null),
       report.writes,
     );
   });

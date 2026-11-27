@@ -238,6 +238,7 @@ const vendor = {
   "automerge-subduction-slim": "@automerge/automerge-subduction/slim",
   "solid-js": "solid-js",
   "solid-js-web": "solid-js/web",
+  "solid-js-store": "solid-js/store",
   "patchwork-plugins": "@inkandswitch/patchwork-plugins",
   "patchwork-filesystem": "@inkandswitch/patchwork-filesystem",
 };

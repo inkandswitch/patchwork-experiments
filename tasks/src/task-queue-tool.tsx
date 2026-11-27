@@ -11,7 +11,7 @@ import {
   joinTaskQueue,
   leaveTaskQueue,
 } from './helpers';
-import { useDoc, useHandle, useHandleDoc, useRepo, WithTasksRepo } from './use-doc';
+import { makeDocSignal, RepoContext, useDocSignal, useRepo } from '@automerge/automerge-repo-solid-primitives';
 import { JobsSection } from './jobs-view';
 import { readBrowserPoolId } from './browser/pool-id';
 import { NOT_STARTED, watchPoolHost, type PoolHostStatus } from './browser/pool-host';
@@ -23,25 +23,15 @@ import { poolWords } from './pool-words';
 // browsers serve it, and whether it is their own queue or a spare folded
 // into it (see `ownQueue` and `fold` in task-client.js).
 //
-// The site hands this tool a handle from its own Repo. Only the url is used:
-// everything here goes through this tab's tasks Repo instead (see
-// tasks-repo.ts), which is what lets it keep working without a network.
-export const TaskQueueTool = (handle: DocHandle<unknown>, element: HTMLElement) =>
-  render(
+export const TaskQueueTool = (handle: DocHandle<Queue>, element: HTMLElement) => {
+  const hostRepo: Repo = (element as any).repo;
+  return render(
     () => (
-      <WithTasksRepo fallback={<div class="tq tq-loading">Starting…</div>}>
-        <TaskQueue url={handle.url} hostRepo={(element as any).repo} element={element} />
-      </WithTasksRepo>
+      <RepoContext.Provider value={hostRepo}>
+        <TaskQueueBrowser handle={handle} hostRepo={hostRepo} element={element} />
+      </RepoContext.Provider>
     ),
     element,
-  );
-
-const TaskQueue = (props: { url: AutomergeUrl; hostRepo: Repo; element: HTMLElement }) => {
-  const handle = useHandle<Queue>(() => props.url);
-  return (
-    <Show when={handle()} fallback={<div class="tq tq-loading">Waiting for this queue…</div>}>
-      {(ready) => <TaskQueueBrowser handle={ready()} hostRepo={props.hostRepo} element={props.element} />}
-    </Show>
   );
 };
 
@@ -55,9 +45,9 @@ const TaskQueue = (props: { url: AutomergeUrl; hostRepo: Repo; element: HTMLElem
  * frame that has none to give is said so to the person.
  */
 function useMembership(queueUrl: AutomergeUrl, hostRepo: Repo, element: HTMLElement) {
-  const account = useDoc<unknown>(getAccountDocUrl, hostRepo);
-  const storageUrl = () => storageUrlOf(account()) as AutomergeUrl | null;
-  const storage = useDoc<TasksStorage>(storageUrl, hostRepo);
+  const [account] = useDocSignal<object>(getAccountDocUrl, { repo: hostRepo });
+  const storageUrl = () => (storageUrlOf(account()) as AutomergeUrl | null) ?? undefined;
+  const [storage] = useDocSignal<TasksStorage>(storageUrl, { repo: hostRepo });
   const [problem, setProblem] = createSignal<string | null>(null);
   // A change waits on the frame's provider when the account names no storage
   // yet (up to PROVIDER_WAIT_MS), so the control that asked for it says it is
@@ -109,7 +99,7 @@ type Work = 'join' | 'leave';
 
 const TaskQueueBrowser = (props: { handle: DocHandle<Queue>; hostRepo: Repo; element: HTMLElement }) => {
   const repo = useRepo();
-  const queue = useHandleDoc(props.handle);
+  const queue = makeDocSignal(props.handle) as () => Queue;
   const membership = useMembership(props.handle.url, props.hostRepo, props.element);
   const [pools, setPools] = createSignal<Serving[]>([]);
   onCleanup(served(repo, props.handle.url, setPools));

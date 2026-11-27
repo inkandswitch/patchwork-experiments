@@ -34,7 +34,6 @@ const repo = new Repo({
   headsChannel: 'patchwork-tasks-heads',
   enableRemoteHeadsGossiping: true,
 });
-window.patchworkTasks = { repo: Promise.resolve(repo) };
 // Where documents are made and found, on a database of its own as the site's Repo is.
 const site = new Repo({
   storage: new IndexedDBStorageAdapter('write-path-site'),

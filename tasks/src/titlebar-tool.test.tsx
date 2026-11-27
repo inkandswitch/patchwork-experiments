@@ -27,9 +27,8 @@ vi.mock('./helpers', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   getAccountDocUrl: () => ACCOUNT,
 }));
-vi.mock('./use-doc', () => ({
-  WithTasksRepo: (props: { children: unknown }) => props.children,
-  useDoc: (url: () => string | null) => () => (url() ? docs[url()!] : undefined),
+vi.mock('@automerge/automerge-repo-solid-primitives', () => ({
+  useDocSignal: (url: () => string | null) => [() => (url() ? docs[url()!] : undefined)],
 }));
 
 let making: { resolve: (url: string) => void; reject: (error: Error) => void } | null = null;

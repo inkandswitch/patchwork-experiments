@@ -1,6 +1,6 @@
 import type { Repo } from '@automerge/automerge-repo/slim';
 import type { RepoConfig } from './repo-config';
-import { TASKS_DATABASE, TASKS_HEADS_CHANNEL } from './ids';
+import { TASKS_DATABASE } from './ids';
 import { onOrigin } from './import-url';
 import { mirror } from './registry-snapshot';
 import type { PluginsHere } from './run-worker';
@@ -128,8 +128,7 @@ function resolveImportMap(importMap: any, baseURI: string) {
  * pipe instead (see below).
  *
  * The pool's worker (no `place.database`) keeps its documents in the tasks
- * database and hears the other Repos of the family on the tasks heads
- * channel, as the page's tasks Repo does (ids.ts).
+ * database (ids.ts).
  *
  * A run worker keeps its documents in a database of its own
  * (`place.database`), as a Node run thread keeps a directory of its own. Its
@@ -147,12 +146,6 @@ function resolveImportMap(importMap: any, baseURI: string) {
  * once the worker has really ended, and a terminated worker spinning in a loop
  * goes on for about 2 s; so a run worker never shares its database with one
  * that is still going, whatever number the pool hands out.
- *
- * Nor does a run worker join the heads channel. What comes on it is news of
- * saves to the shared database, which a Repo on another database cannot load,
- * and what it would say there is news of saves the others cannot load either.
- * The Repo takes the channel as optional, and without one says and hears
- * nothing; a channel of its own would be the same with one more object.
  *
  * A worker under a page that holds the site's Repo is handed its end of a
  * pipe to it (`link`, browser/pool-host.ts), which its Repo takes as its only
@@ -192,7 +185,6 @@ export async function getRepo(config: RepoConfig, peerId: string, place: PlaceSe
     peerId: peerId as any,
     subductionWebsocketEndpoints: link ? [] : [config.syncServerUrl],
     network,
-    ...(database ? {} : { headsChannel: TASKS_HEADS_CHANNEL }),
     enableRemoteHeadsGossiping: true,
   });
 
