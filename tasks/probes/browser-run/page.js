@@ -40,7 +40,7 @@ initSync(new Uint8Array(subductionWasm));
 await initializeWasm(new Uint8Array(automergeWasm));
 
 const repo = new Repo({
-  storage: new IndexedDBStorageAdapter('patchwork-tasks'),
+  storage: new IndexedDBStorageAdapter('stand-in-site'),
   peerId: `probe-tab-${crypto.randomUUID()}`,
   subductionWebsocketEndpoints: [SYNC],
   headsChannel: 'patchwork-tasks-heads',
@@ -282,9 +282,9 @@ const probe = {
     };
   },
 
-  /** The IndexedDB databases of this origin whose names are a run worker's or the pool worker's own: none, since a worker has no storage. */
-  async workerDatabases() {
-    return (await indexedDB.databases()).map((db) => db.name).filter((name) => /^patchwork-tasks-run-\d+$/.test(name));
+  /** The names of this origin's IndexedDB databases: the stand-in site's own and nothing a worker made. */
+  async databaseNames() {
+    return (await indexedDB.databases()).map((db) => db.name).sort();
   },
 
   /**

@@ -1,6 +1,5 @@
 import type { Repo } from '@automerge/automerge-repo/slim';
 import { onOrigin } from './import-url';
-import { flushesToHost } from './pipe';
 import { mirror } from './registry-snapshot';
 import type { PluginsHere } from './run-worker';
 
@@ -120,6 +119,8 @@ function resolveImportMap(importMap: any, baseURI: string) {
  * adapter, and it has no storage and no socket. What it keeps is kept by the
  * host's Repo, which sends it on.
  *
+ * `_place` is the Node build's (node/webworker-lib.node.ts); a page has no use for it.
+ *
  * No `signer`, on purpose: the Repo makes itself a new identity each time. The
  * tabs on an origin all sign as one peer, and a worker that did the same would
  * be relying on the server to pass a peer's ephemeral messages back to that
@@ -148,7 +149,6 @@ export async function getRepo(peerId: string, link: MessagePort, _place?: PlaceS
     enableRemoteHeadsGossiping: true,
   });
 
-  flushesToHost(repo);
   (globalThis as any).repo = repo;
 
   return repo;

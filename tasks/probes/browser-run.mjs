@@ -1291,15 +1291,15 @@ try {
       const ok = typeof url === "string" && url.startsWith("automerge:");
       pageHas.push(ok ? await F.js(`probe.has(${J(url)}, 2000)`) : null);
     }
-    const databases = await F.js("probe.workerDatabases()");
+    const databases = await F.js("probe.databaseNames()");
     check(
       "15 two tasks at once in two run workers, each writing its own document: both run, each document reaches the page's Repo through its worker's pipe, results and records reach the page, and no worker has a database of its own",
       lasts.every((l) => l.state === "succeeded" && J(runsOf(l)) === J(["succeeded"])) &&
         new Set(urls).size === 2 &&
         during >= 2 &&
-        databases.length === 0 &&
+        J(databases) === J(["stand-in-site"]) &&
         pageHas.every((has) => has === true),
-      `${during} run workers while both ran; ${lasts.map((l, i) => `${l.state} ${J(runsOf(l))} → ${String(urls[i]).slice(0, 22)}…`).join("; ")}; worker databases ${J(databases)}; the page's Repo has the documents: ${J(pageHas)} (no sync server here: through the pipes)`,
+      `${during} run workers while both ran; ${lasts.map((l, i) => `${l.state} ${J(runsOf(l))} → ${String(urls[i]).slice(0, 22)}…`).join("; ")}; databases ${J(databases)}; the page's Repo has the documents: ${J(pageHas)} (no sync server here: through the pipes)`,
     );
   }
 

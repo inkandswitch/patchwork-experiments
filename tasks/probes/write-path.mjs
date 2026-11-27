@@ -12,9 +12,9 @@
 // out   the task makes a document of S random bytes and returns its url; the
 //       asker, which has never seen it, finds it from the moment it reads
 //       the task succeeded, asking again whenever a find rejects. The run
-//       worker says the run ended only once the sync server has acknowledged
-//       the document, so "ask" includes that wait, and a rejected first find
-//       is a broken promise.
+//       worker's document reaches the host's Repo through the pipe and goes on
+//       to the sync server from there, so "ask" includes that, and a rejected
+//       first find is a broken promise.
 // in    the asker makes the document and at once asks a task to read it;
 //       the task finds it the same way and says how long it took.
 // many  the task writes 20 documents of 250 KB; the asker finds them all.

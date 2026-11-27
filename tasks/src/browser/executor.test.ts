@@ -33,7 +33,6 @@ class StandInWorker {
 beforeEach(() => {
   StandInWorker.made = [];
   vi.stubGlobal('Worker', StandInWorker);
-  vi.stubGlobal('navigator', { locks: { request: () => new Promise(() => {}) } });
 });
 afterEach(() => {
   vi.useRealTimers();

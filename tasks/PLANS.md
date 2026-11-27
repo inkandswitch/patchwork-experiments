@@ -14,8 +14,7 @@ runs, 2026-11-27). The browser pool on its stand-in page, asked from that page, 
 
 ### Where the time goes
 
-Every step traced on one clock, 20 tasks one at a time on a warm host (median / worst, ms; traced
-while the thread still saved before its run was reported):
+Every step traced on one clock, 20 tasks one at a time on a warm host (median / worst, ms):
 
 | Step | ms | What it waits on |
 |---|---|---|
@@ -24,19 +23,13 @@ while the thread still saved before its run was reported):
 | The pool finds the task's document | 138 / 204 | One round trip, and a forced write of what arrived |
 | The claim is saved | 53 / 61 | The rule: a run's start is saved before its code is called |
 | Hand-over, import, call, return | 4 / 8 | |
-| The thread saves what the code wrote | 47 / 56 | One flush of its Repo, the imported task document included |
 | The end is saved | 72 / 90 | The rule; it delays the start of the end's sync round |
 | The end reaches the asker | 256 / 306 | The end's own round, which starts only once the claim's has finished |
 | **Asked to taken / taken to ended / ended to the asker** | **366 / 107 / 258** | |
 | **Total** | **717 / 830** | |
 
-The thread no longer saves before its run is reported: 4 ms in the thread, against 53–56 with the
-save (30 asks each). The total falls by only about 35 ms (686–690 → 653–655 ms): the end then waits
-for the claim's round instead (ended to the asker 233–236 → 249–253 ms).
-
-In the browser the same save, of the imported task document, cost 2.0–2.2 ms a run (worst 3.8;
-40 asks traced on the stand-in). The deployed site's no-op ask through its own Repo (about 210 ms
-in most sessions, 101–104 ms in others) has not been traced step by step.
+The deployed site's no-op ask through its own Repo (about 210 ms in most sessions, 101–104 ms in others)
+has not been traced step by step.
 
 ### The floor, and what stands above it
 

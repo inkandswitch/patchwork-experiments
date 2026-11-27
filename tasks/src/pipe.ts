@@ -5,7 +5,7 @@
 // goes through its host's Repo. A pipe is a MessageChannel: the host keeps
 // one end, the worker is handed the other.
 
-import type { DocumentId, Repo } from '@automerge/automerge-repo/slim';
+import type { Repo } from '@automerge/automerge-repo/slim';
 import { MessageChannelNetworkAdapter } from '@automerge/automerge-repo-network-messagechannel';
 import { WORKER_PEER } from './ids';
 
@@ -34,38 +34,3 @@ export function pipe(repo: Repo, port: MessagePort): () => void {
     port.close();
   };
 }
-
-/**
- * Makes `repo.flush` mean what it can for a worker's Repo: with no storage
- * to drain, a flush resolves once the host's Repo, the Repo's one peer over
- * the pipe, has the heads this Repo has of each document asked about (all it
- * has open when none is named). A worker that says it has saved (a run's
- * claim, a run's end) therefore has told its host; one with no host to tell
- * has nothing to wait for.
- */
-export function flushesToHost(repo: Repo): void {
-  const heldByHost = (id: DocumentId): Promise<void> => {
-    const handle = repo.handles[id];
-    // A host that keeps nothing says no storage id, and cannot say what it has.
-    const host = repo.peers[0] && repo.getStorageIdOfPeer(repo.peers[0]);
-    if (!host) {
-      return Promise.resolve();
-    }
-    return new Promise<void>((resolve) => {
-      const check = () => {
-        const there = handle.getSyncInfo(host)?.lastHeads;
-        if (there && sameHeads(there, handle.heads())) {
-          handle.off('remote-heads', check);
-          resolve();
-        }
-      };
-      handle.on('remote-heads', check);
-      check();
-    });
-  };
-  repo.flush = async (documents) => {
-    await Promise.all((documents ?? (Object.keys(repo.handles) as DocumentId[])).filter((id) => repo.handles[id]?.isReady()).map(heldByHost));
-  };
-}
-
-const sameHeads = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((head) => b.includes(head));

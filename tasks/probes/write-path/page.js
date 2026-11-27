@@ -26,7 +26,7 @@ initSync(new Uint8Array(subductionWasm));
 await initializeWasm(new Uint8Array(automergeWasm));
 
 const repo = new Repo({
-  storage: new IndexedDBStorageAdapter('patchwork-tasks'),
+  storage: new IndexedDBStorageAdapter('stand-in-site'),
   peerId: `write-path-tab-${crypto.randomUUID()}`,
   subductionWebsocketEndpoints: [SYNC],
   headsChannel: 'patchwork-tasks-heads',

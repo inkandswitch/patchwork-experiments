@@ -11,7 +11,6 @@ import type { PlaceSettings } from '../webworker-lib';
 import { mirror } from '../registry-snapshot';
 import type { PluginsHere } from '../run-worker';
 import { parseAutomergeImport } from '../import-url';
-import { flushesToHost } from '../pipe';
 import { materialise, packageText } from './package-files';
 import { importTask } from './task-imports';
 
@@ -38,7 +37,6 @@ export async function getRepo(peerId: string, link: MessagePort, given: PlaceSet
     network: [new MessageChannelNetworkAdapter(link)],
     peerId: peerId as any,
   } as any);
-  flushesToHost(threadRepo as unknown as Parameters<typeof flushesToHost>[0]);
   return threadRepo as any;
 }
 
