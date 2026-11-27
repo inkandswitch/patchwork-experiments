@@ -25,9 +25,12 @@
  *     exactly as they came. The model goes on thinking from where it was
  *     between tool calls instead of working it out again, and nothing it sent
  *     changes in the prefix the prompt cache matches.
- *   - The system prompt is the first input item, with a cache breakpoint at its
- *     end, so every session that shares it shares the cached prefix, and
- *     `prompt_cache_key` keeps a session's requests together.
+ *   - The system prompt is the first input item (a developer message, which
+ *     the prompt cache can reuse, where top-level `instructions` are billed
+ *     afresh every time), and `prompt_cache_key` keeps a session's requests
+ *     together. No explicit cache breakpoint: every model on the plan route
+ *     refused one (probes/live-chatgpt.mjs, 2026-11-27), and that route
+ *     reported no cached tokens at all.
  *   - Screenshots and PDFs a tool hands back go inside the tool's own output,
  *     not as a message after it.
  *
@@ -77,7 +80,6 @@ export const SUGGESTED_MODELS = [
  * shown, never what the request means.
  */
 export const OPTIONAL = {
-  breakpoint: /\.prompt_cache_breakpoint$/,
   cacheKey: /^prompt_cache_key$/,
   streamOptions: /^stream_options(\.|$)/,
   include: /^include(\[|$)/,
@@ -136,13 +138,9 @@ function fileInput(file) {
  * `function_call_output` after it. A screenshot or PDF a tool handed over
  * goes inside that output.
  */
-export function toInput(system, messages, { dropImages = false, namespaced = true, breakpoint = true } = {}) {
+export function toInput(system, messages, { dropImages = false, namespaced = true } = {}) {
   const input = []
-  if (system) {
-    const text = { type: "input_text", text: system }
-    if (breakpoint) text.prompt_cache_breakpoint = { mode: "explicit" }
-    input.push({ type: "message", role: "developer", content: [text] })
-  }
+  if (system) input.push({ type: "message", role: "developer", content: [{ type: "input_text", text: system }] })
 
   for (const msg of messages) {
     const texts = []
@@ -240,7 +238,7 @@ export function buildBody({ system, messages, tools, model, params = {}, dropIma
   const namespaced = !drop.has("namespace")
   const body = {
     model,
-    input: toInput(system, messages, { dropImages, namespaced, breakpoint: !drop.has("breakpoint") }),
+    input: toInput(system, messages, { dropImages, namespaced }),
     store: false,
     stream: true,
   }
@@ -323,7 +321,7 @@ export function failure({ status = null, code = null, param = null, message = ""
  */
 export function droppable({ code = null, param = null, message = "" } = {}, sent = new Set()) {
   if (typeof param !== "string" || !param) return null
-  if (code && code !== "subscription_sharing_unsupported_capability" && !/unknown_parameter|unsupported_parameter|invalid_request|unsupported_value/.test(code)) return null
+  if (code && code !== "subscription_sharing_unsupported_capability" && !/unknown_parameter|unsupported_parameter|invalid_parameter|invalid_request|unsupported_value/.test(code)) return null
   for (const [feature, names] of Object.entries(OPTIONAL)) {
     if (!sent.has(feature) || !names.test(param)) continue
     if (feature === "namespace" && !/namespace/i.test(String(message ?? ""))) continue
@@ -487,7 +485,6 @@ export function _resetTurnedDown() {
 /** Which OPTIONAL features a body sends. */
 function sentFeatures(body) {
   const sent = new Set()
-  if (body.input?.[0]?.content?.[0]?.prompt_cache_breakpoint) sent.add("breakpoint")
   if (body.prompt_cache_key) sent.add("cacheKey")
   if (body.stream_options) sent.add("streamOptions")
   if (body.include) sent.add("include")
@@ -664,7 +661,9 @@ export async function models({ key, fetchImpl = fetch } = {}) {
 /** Which effort levels a catalogue entry lists, under whichever name it uses. */
 function effortsOf(m) {
   const raw = m.supported_reasoning_levels ?? m.supported_reasoning_efforts ?? m.reasoning?.supported_efforts ?? null
-  const efforts = Array.isArray(raw) ? raw.map((level) => (typeof level === "string" ? level : level?.effort)).filter((e) => typeof e === "string") : []
+  // "ultra" is effort with automatic delegation to sub-agents, which the
+  // plan route does not take (its preview limitations: no multi_agent).
+  const efforts = Array.isArray(raw) ? raw.map((level) => (typeof level === "string" ? level : level?.effort)).filter((e) => typeof e === "string" && e !== "ultra") : []
   const defaultEffort = m.default_reasoning_level ?? m.default_reasoning_effort ?? m.reasoning?.default_effort ?? null
   return { efforts, defaultEffort: typeof defaultEffort === "string" ? defaultEffort : null }
 }
@@ -673,7 +672,7 @@ function effortsOf(m) {
 export function describeModel(model) {
   const parts = [model.label]
   if (model.context) parts.push(`${Math.round(model.context / 1000)}k ctx`)
-  if (model.efforts?.length) parts.push(`effort ${model.efforts[model.efforts.length - 1]}–${model.efforts[0]}`)
+  if (model.efforts?.length) parts.push(`effort ${model.efforts[0]}–${model.efforts[model.efforts.length - 1]}`)
   parts.push("on your plan")
   return parts.join(" · ")
 }

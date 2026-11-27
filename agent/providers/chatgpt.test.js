@@ -44,13 +44,10 @@ const CALL = { id: "fc_1", type: "function_call", call_id: "call_a", name: "doc_
 beforeEach(() => _resetTurnedDown())
 
 describe("the request", () => {
-  it("sends the system prompt as the first input, a developer message with a cache breakpoint at its end", () => {
+  it("sends the system prompt as the first input, a developer message, with no cache breakpoint (the plan route refuses one)", () => {
     const body = buildBody({ system: "Be useful.", messages: [], model: "m" })
-    expect(body.input[0]).toEqual({
-      type: "message",
-      role: "developer",
-      content: [{ type: "input_text", text: "Be useful.", prompt_cache_breakpoint: { mode: "explicit" } }],
-    })
+    expect(body.input[0]).toEqual({ type: "message", role: "developer", content: [{ type: "input_text", text: "Be useful." }] })
+    expect(JSON.stringify(body)).not.toMatch(/prompt_cache_breakpoint/)
     expect("instructions" in body).toBe(false)
   })
 
@@ -230,11 +227,13 @@ describe("refusals", () => {
   })
 
   it("name a feature to drop only by the parameter it names, when it was sent and the refusal is about a parameter", () => {
-    const sent = new Set(["breakpoint", "summary", "namespace"])
-    expect(droppable({ code: "subscription_sharing_unsupported_capability", param: "input[0].content[0].prompt_cache_breakpoint" }, sent)).toBe("breakpoint")
+    const sent = new Set(["cacheKey", "summary", "namespace"])
+    expect(droppable({ code: "subscription_sharing_unsupported_capability", param: "prompt_cache_key" }, sent)).toBe("cacheKey")
     expect(droppable({ code: "unsupported_parameter", param: "reasoning.summary", message: "" }, sent)).toBe("summary")
     expect(droppable({ code: "unsupported_parameter", param: "stream_options" }, sent)).toBeNull()
-    expect(droppable({ code: "subscription_sharing_usage_limit_exceeded", param: "input[0].content[0].prompt_cache_breakpoint" }, sent)).toBeNull()
+    expect(droppable({ code: "subscription_sharing_usage_limit_exceeded", param: "prompt_cache_key" }, sent)).toBeNull()
+    // As the plan route says it, live: the parameter's name alone, code invalid_parameter.
+    expect(droppable({ code: "invalid_parameter", param: "reasoning.summary", message: "reasoning.summary is not supported on this model" }, sent)).toBe("summary")
     // Never by the wording: a replayed reasoning item's summary is not the request's.
     expect(droppable({ code: "invalid_request_error", param: null, message: "reasoning.summary is not supported" }, sent)).toBeNull()
     expect(droppable({ code: "invalid_request_error", param: "input[3].summary", message: "bad summary" }, sent)).toBeNull()

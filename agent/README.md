@@ -75,7 +75,7 @@ belongs, never in the session.
   with the account so other devices sign in to it. The page renews the hour-long
   token when it asks for a run; a run whose token runs out ends for a fresh
   one. Each reply's encrypted reasoning and message phases go back with it
-  (the turn's `carry`), the system prompt is a cached developer message, and a
+  (the turn's `carry`), the system prompt goes first as a developer message, and a
   feature the plan route refuses is dropped and the request sent again.
 
 A module imports from its own directory and the directories below it, and from

@@ -3,7 +3,7 @@
  *
  * The unit tests prove the adapter against OpenAI's documents. This proves the
  * documents: that the plan route takes what buildBody sends (the namespace of
- * tools, the cache breakpoint, the carry sent back), what /v1/models really
+ * tools, the carry sent back), what /v1/models really
  * lists, and whether the prompt cache is hit.
  *
  * Node can do what a page cannot: listen on 127.0.0.1:1455 for the sign-in's
