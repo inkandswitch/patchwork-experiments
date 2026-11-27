@@ -134,25 +134,25 @@ that one machine serves.
   would narrow it to the time after every turn. Each waits on a case that needs it.
 - **Left to the Repo.** Three things the task system does not do, because they are a Repo's:
   - *Sending what was stored but not sent.* A Repo sends a document only while it has it open,
-    and loads a stored one only when something asks for it. So what a worker or a page wrote but
-    had not sent before a reload or a restart (with no network, or a worker ended with its run or
-    stopped mid-run) is not sent until something opens it. A design bug is being logged with Subduction.
+    and loads a stored one only when something asks for it. So what a page or a host wrote but
+    had not sent before a reload or a restart (with no network) is not sent until something opens
+    it. A design bug is being logged with Subduction.
   - *Holding a run's ending until others have its writes.* A run is reported when its code
     returns; its worker's Repo saves and sends what it wrote in its own time (each throttled, by
     default to at most 100 ms after a change). A worker kept for the next run keeps its Repo and
-    sends it on. One ended right after its report loses what neither its storage nor the page
-    (or, on a Node host, the sync server) had yet: a stopping run that returns is ended at once,
-    idle workers are ended when the pool stops, and the pool's worker with its page. With no
-    network, a page reloaded the instant a run ends may also lack the run's writes. Saving before
-    a worker ends is the Repo's to hold.
+    sends it on. One ended right after its report loses what its host's Repo did not have yet over
+    the pipe: a stopping run that returns is ended at once, idle workers are ended when the pool
+    stops, and the pool's worker with its page. With no network, a page reloaded the instant a run
+    ends may also lack the run's writes. Saving before a worker ends is the Repo's to hold.
   - *Deciding what a worker may be given.* The pipe carries what the site's Repo shares with a
     peer; what a worker may have is the Repo's and keyhive's to decide.
 - **What the pipe still lacks.**
-  - *Piped workers have no socket of their own.* A Repo asks its classic peers for a document
-    only once its Subduction source has given up, and one whose server cannot be reached keeps
-    trying, so a worker with both would never ask the page with no network. A Repo that asked its
-    classic peers beside Subduction (or a Subduction transport over the port) would let a worker
-    keep its own socket. Waits on the Repo.
+  - *Workers reach documents only through their pipe.* Every worker's Repo has no storage and no
+    socket, and its one network adapter is the pipe to its host's Repo (`src/pipe.ts`). A Repo
+    asks its classic peers for a document only once its Subduction source has given up, and one
+    whose server cannot be reached keeps trying, so a worker with a socket beside its pipe would
+    never ask its host with no network. A Repo that asked its classic peers beside Subduction (or
+    a Subduction transport over the port) would let a worker keep its own socket. Waits on the Repo.
   - *Another tab than the pool's.* Its site Repo shares a database and a heads channel with the
     holder's, so its `doWork` is run by the pool, with or without the network (browser-run checks
     41 and 42). The site's Repos do not carry the pool's ephemeral messages between tabs: those

@@ -23,12 +23,12 @@ again), **a throw is final** (the task fails, once, and is not run again for it)
 hard** (five seconds after code is told to stop, its worker is ended whatever it is doing).
 One more about documents: **what a task is handed can be found** (its `ctx.repo.find` waits
 for a document that has not arrived yet, for about half a minute, instead of rejecting at once).
-What a task writes is saved in its worker's Repo before its run's ending is said, and reaches
-others as the Repos sync it: the page that holds the pool over the pipe (see Offline and
-partition), normally within milliseconds, but not promised by the time the work resolves, so a
-reader waits for it as for any document made elsewhere (`findWhenThere`, or a handle's changes).
-What a worker wrote but its Repo had not sent before a reload or restart is sent when that Repo
-next syncs it, which is the Repo's business (PLANS, "Left to the Repo").
+What a task writes is in its worker's Repo before its run's ending is said, and reaches the
+host's Repo over the pipe (see Offline and partition), normally within milliseconds, and others as
+that Repo syncs it. That is not promised by the time the work resolves, so a reader waits for it
+as for any document made elsewhere (`findWhenThere`, or a handle's changes). What a worker had not
+yet sent over its pipe when its host went (a tab closed, a process stopped) is lost with it:
+the worker keeps nothing (PLANS, "Left to the Repo").
 
 **Mostly once**: asked of a queue that several of a person's devices serve, a task runs on one of
 them, once, unless the device running it dies part way, or two devices cannot hear each other at
@@ -127,7 +127,7 @@ the task returns. `ctx` holds:
   longer than the beat, or taken a moment after this one by a pool whose round trip to this one
   is longer than the beat) makes this run yield only after it settled, with what it did already
   done. Code that never awaits it is not held up by it.
-- `repo`: the worker's own Repo, which already has the task's document. Its `find` waits for a
+- `repo`: the worker's own Repo, which reaches documents through its host's, the task's among them. Its `find` waits for a
   document made elsewhere a moment ago (asking again for about half a minute, as `findWhenThere`
   in `task-client.js` does), so an input the asker has just made is found, not refused; a url it
   cannot read, or a `signal` passed to `find` aborting, ends the asking at once. The run's
@@ -363,8 +363,8 @@ the queue's document, what is heard on the queue's channel), and never starting 
 - `--workers 1` how many tasks run at once, each in a worker thread.
 - `--max-heap-mb 4096` the most each thread's heap may grow to; a task that needs more loses its
   run, not the host.
-- `--data-dir ~/.patchwork-tasks` where everything is kept: the pool's documents (`pool/`),
-  each thread's (`slots/<n>/`), fetched code (`code/`), the pool's id (`pool-id`) and the pid
+- `--data-dir ~/.patchwork-tasks` where everything is kept: the documents (`pool/`),
+  fetched code (`code/`), the pool's id (`pool-id`) and the pid
   (`host.pid`). The id is what lets a restarted host record the runs it lost; one host to a
   directory.
 - `--code-dir <dir>` where fetched code goes, if not under the data directory.
@@ -379,8 +379,7 @@ the queue's document, what is heard on the queue's channel), and never starting 
 
 A host needs at least one `--queue` or `--new-queue`. SIGINT or SIGTERM stops it: its runs are
 told `stopping`, their threads ended at most five seconds later, and each run recorded lost, to be
-taken again. What a run that has ended wrote is in its thread's storage, and reaches the sync
-server as that thread's Repo syncs it.
+taken again. What a run that has ended wrote reaches the sync server as the host's Repo syncs it.
 
 ## Offline and partition
 
@@ -391,18 +390,20 @@ and wasm they load are the ones the page's import map names and its origin serve
 the page itself loads. A sync server that cannot be reached holds nothing up: the Repos go on
 trying, and work from what this browser keeps.
 
-**The pipe** (`src/browser/pool-host.ts`). The tab that runs the pool joins the site's Repo to
-the pool's worker, and to each run worker, by a MessageChannel each: its end is the MessageChannel
-network adapter of the site's import map, added to the site's Repo as core adds its public
-reader, and the other is the worker Repo's one network adapter. A run worker's pipe is taken out
-when that run worker ends, and every pipe of a pool when its worker ends. Run workers keep storage
-of their own. A piped worker has no socket of its own to the sync server: the site's Repo is its
-way to everything, the server included (a Repo asks its classic peers for a document only once
-its Subduction source has given up, and one whose server cannot be reached does not give up). The
-site's Repo offers a worker's Repo none of its documents (its share setting `announce` is false
-for a peer whose id starts with `task-worker-`; by default a new peer is sent every document the
-Repo has open), and gives it what it asks for, as the Repo's own access rule says. A worker with
-no page above it (a Node host's thread) has no pipe.
+**The pipe** (`src/pipe.ts`). Every worker, browser or Node, pool worker or run worker, reaches
+documents only through a pipe to its host's Repo: its Repo has no storage and no socket, and the
+pipe is its one network adapter. Only the host's Repo has storage and a network: in a browser the
+site's Repo in the tab that runs the pool, in Node the host process's Repo with its directory and
+its socket. The host joins its Repo to the pool's worker, and to each run worker, by a
+MessageChannel each (a worker_threads one for each Node thread): its end is the MessageChannel
+network adapter of the site's import map, added to the host's Repo as core adds its public reader,
+and the other is the worker Repo's. A pool is started only from a site Repo, so a browser pool
+always has its pipe. A run worker's pipe is taken out when that run worker ends, and every pipe of
+a pool when its worker ends. The host's Repo offers a worker's Repo none of its documents (its
+share setting `announce` is false for a peer whose id starts with `task-worker-`; by default a new
+peer is sent every document the Repo has open), and gives it what it asks for, as the Repo's own
+access rule says. Code fetched from automerge reaches a Node thread the same way, from the host's
+Repo, so a host with no network runs the code it has kept.
 
 | On one device with no network | |
 |---|---|
