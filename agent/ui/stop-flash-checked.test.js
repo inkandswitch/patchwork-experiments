@@ -13,10 +13,10 @@ import { Repo, initSubduction } from "@automerge/automerge-repo"
 import { initSession, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { STOP, stopOf } from "../session/status.js"
-import { askWork, forget, CANCELLED } from "../runners/ask.js"
+import { askWork, forget } from "../runners/ask.js"
 import { _reset } from "../runners/page.js"
 import { AgentTool } from "./session-view.js"
-import { standIn } from "../fixtures/task-client.js"
+import { standIn } from "../fixtures/tasks-stand-in.js"
 
 await initSubduction()
 
@@ -65,7 +65,7 @@ function queue(handle, { hearsCancelMs = 400 } = {}) {
       setTimeout(() => {
         q.say({ ...q.view, state: "cancelled", runs: q.view.runs.map((r) => ({ ...r, end: Date.now(), status: "cancelled" })) })
         q.waiting = null
-        waiting.reject(new Error(CANCELLED))
+        waiting.reject(new Error(standIn().CANCELLED))
       }, hearsCancelMs)
       return true
     }),

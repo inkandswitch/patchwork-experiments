@@ -19,8 +19,8 @@ page that asks. `runners/session-task.js` is the task's entry.
   this browser, its pool takes the task, and the burst runs up to its model
   request, which waits for the network (SESSION.md, `reconnecting`).
 - The task client is the Tasks package's, asked of the plugin registry (the
-  library `tasks-next`, `host/import.js`) once and kept, in a page and in a
-  pool alike. Where the package is not installed in the browser, nothing is
+  library `tasks-next`, `host/import.js`) each time it is needed, in a page
+  and in a pool alike. Where the package is not installed in the browser, nothing is
   asked or followed and the line under the composer says the Tasks package is
   needed; once it arrives, the page carries on.
 - Asking under a key whose task has not ended is asking once, so any number of

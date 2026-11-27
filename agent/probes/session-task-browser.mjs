@@ -92,8 +92,6 @@ for (const [name, spec] of Object.entries(vendor)) {
   writeFileSync(join(stubs, `${name}.js`), `export * from ${J(spec)};\n`);
   entryPoints[name] = join(stubs, `${name}.js`);
 }
-// The stand-in page's own client, as browser-run.mjs builds it.
-entryPoints["task-client"] = join(TASKS, "src/task-client.js");
 await build({
   entryPoints,
   outdir: join(root, "vendor"),

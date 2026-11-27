@@ -26,7 +26,7 @@ import { asInterruption } from "../net/network.js"
 import { askWork } from "../runners/ask.js"
 import { _reset, askFor, stopFor, takeOverFor, retireEarlier } from "../runners/page.js"
 import { handleStore } from "../kernel/store.js"
-import { standIn } from "../fixtures/task-client.js"
+import { standIn } from "../fixtures/tasks-stand-in.js"
 
 const handleStoreOf = (handle) => handleStore(handle, A.splice)
 

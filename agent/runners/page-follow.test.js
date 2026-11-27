@@ -15,7 +15,7 @@ import { follow, askFor, takeOverFor, stopFor, followWorkFor, drivePlanHere, let
 import { forget, workKey } from "./ask.js"
 import { getDriver, sessionHolder, _resetDrivers } from "../workflow/driver.js"
 import { initPlan, beginStep, cancelStep, changePlan, STEP } from "../workflow/plan.js"
-import { standIn } from "../fixtures/task-client.js"
+import { standIn } from "../fixtures/tasks-stand-in.js"
 
 await initSubduction()
 

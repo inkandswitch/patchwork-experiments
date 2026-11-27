@@ -13,7 +13,7 @@ import { makeTurn, textBlock } from "../session/blocks.js"
 import { askWork, forget, failedAskOf } from "../runners/ask.js"
 import { askFor, followWorkFor, _reset } from "../runners/page.js"
 import { sessionValue } from "./session-value.js"
-import { standIn as taskClientOf } from "../fixtures/task-client.js"
+import { standIn as taskClientOf } from "../fixtures/tasks-stand-in.js"
 
 await initSubduction()
 

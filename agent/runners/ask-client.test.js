@@ -1,8 +1,8 @@
 /**
  * The task client runners/ask.js asks with: the registry's (host/import.js
- * taskClient), got once and kept; and the own queue among the input's
+ * taskClient), asked for afresh each time; and the own queue among the input's
  * documents that always ask. The registry and the client are stand-ins
- * (fixtures/task-client.js); the probes use the Tasks package's own.
+ * (fixtures/tasks-stand-in.js); the probes use the Tasks package's own.
  */
 import { describe, it, expect, afterEach } from "vitest"
 import { join } from "node:path"
@@ -11,7 +11,7 @@ import { initSession, _resetIds } from "../session/schema.js"
 import { makeTurn, textBlock } from "../session/blocks.js"
 import { setHostUrls } from "../host/urls.js"
 import { taskClient, clientHere, _holdClient } from "../host/import.js"
-import { standIn, install } from "../fixtures/task-client.js"
+import { standIn, install } from "../fixtures/tasks-stand-in.js"
 import { askWork, forget, workKey } from "./ask.js"
 
 await initSubduction()
@@ -48,8 +48,8 @@ function client({ own } = {}) {
 }
 
 describe("the task client", () => {
-  it("is the registry's library tasks-next: said missing until the Tasks package arrives, then had, and kept", async () => {
-    setHostUrls({ "@inkandswitch/patchwork-plugins": join(process.cwd(), "fixtures", "task-client.js") })
+  it("is the registry's library tasks-next: said missing until the Tasks package arrives, then had, and a newer one had when asked again", async () => {
+    setHostUrls({ "@inkandswitch/patchwork-plugins": join(process.cwd(), "fixtures", "tasks-stand-in.js") })
     let missing = 0
     const had = taskClient(() => missing++)
     await new Promise((r) => setTimeout(r, 20))
@@ -58,9 +58,11 @@ describe("the task client", () => {
     install(first)
     expect(await had).toBe(first)
     expect(clientHere()).toBe(first)
-    // Got once: a newer one registered later is not taken up.
-    install(standIn())
-    expect(await taskClient(() => missing++)).toBe(first)
+    // Asked again, the registry's now: a newer one registered later is taken up.
+    const newer = standIn()
+    install(newer)
+    expect(await taskClient(() => missing++)).toBe(newer)
+    expect(clientHere()).toBe(newer)
     expect(missing).toBe(1)
   })
 

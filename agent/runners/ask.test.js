@@ -10,7 +10,7 @@ import { makeTurn, textBlock, callBlock } from "../session/blocks.js"
 import { STOP, stopOf } from "../session/status.js"
 import { isOwn } from "../kernel/own-changes.js"
 import { HEADS_WAIT_MS } from "../kernel/burst.js"
-import { askWork, takeOver, stop, forget, workKey, followWork, failedAskOf, CANCELLED } from "./ask.js"
+import { askWork, takeOver, stop, forget, workKey, followWork, failedAskOf } from "./ask.js"
 
 await initSubduction()
 
@@ -23,6 +23,9 @@ afterEach(() => {
   for (const url of followed.splice(0)) forget(url)
 })
 
+/** What the Tasks package's doWork rejects with when the task ended cancelled (its CANCELLED). */
+const CANCELLED = "The task was cancelled"
+
 const MISSING = { state: "missing", runs: [], input: undefined, result: undefined, progress: null }
 
 /** A task client that asks nothing of a queue: its watch says what `show` says, and doWork records. */
@@ -34,6 +37,7 @@ function standIn(view = MISSING) {
   return {
     asks,
     client: {
+      CANCELLED,
       doWork: (...args) => {
         asks.push(args)
         return new Promise((resolve, reject) => ends.push({ resolve, reject }))

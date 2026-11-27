@@ -44,29 +44,28 @@ let libraries = null
 /**
  * The task client (tasks/README.md, "Using it from another package"): the
  * Tasks package's library `tasks-next` in this realm's plugin registry, asked
- * for the same way in a page and in a pool's worker, got once and kept.
- * Resolves once the package is installed here, at once where it is, and
- * tells `onMissing` first when it is not yet. Rejects where there is no
- * registry (tests, a plain Node program).
+ * for the same way in a page and in a pool's worker, on every call, so an
+ * update is had the next time. Resolves once the package is installed here,
+ * at once where it is, and tells `onMissing` first when it is not yet.
+ * Rejects where there is no registry (tests, a plain Node program).
  */
 export function taskClient(onMissing = null) {
-  if (client) return Promise.resolve(client)
   libraries ??= hostImport("plugins").then(({ getRegistry }) => getRegistry("patchwork:library"))
   return libraries
     .then((registry) => {
       if (!registry.has("tasks-next")) onMissing?.()
       return registry.loadWhenReady("tasks-next")
     })
-    .then(({ module }) => (client ??= module))
+    .then(({ module }) => (client = module))
 }
 
-/** The task client once had, or null. */
+/** The task client last had, or null. */
 export const clientHere = () => client
 
-/** Tests: hold `stand` as the task client; null holds none, and asks the registry afresh. */
+/** Tests: a registry that gives `stand` as the task client; null gives none, and asks the real one afresh. */
 export function _holdClient(stand) {
   client = stand
-  libraries = null
+  libraries = stand ? Promise.resolve({ has: () => true, loadWhenReady: async () => ({ module: stand }) }) : null
 }
 
 /** Import a host module, or null when it is not available (tests, node). */

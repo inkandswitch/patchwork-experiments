@@ -371,7 +371,7 @@ export function AgentTool(handle, element, options = {}) {
     keysSettled = true
     render()
   })
-  // The task client (host/import.js), got once for the page and kept.
+  // The task client (host/import.js): at once where this page has had it, otherwise when it arrives.
   if (repo && clientHere()) followTasks()
   else if (repo)
     taskClient(() => ((noTasks = true), render())).then(() => {

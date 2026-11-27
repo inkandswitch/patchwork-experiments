@@ -77,11 +77,8 @@ export { workKey }
 
 const FINISHED = new Set(["succeeded", "failed", "cancelled"])
 
-/** What the task client's doWork rejects with when the task it waits on ended cancelled. */
-export const CANCELLED = "The task was cancelled"
-
-/** Did the task this ask waited on end cancelled? */
-const wasCancelled = (err) => String(err?.message ?? err).replace(/[.\s]+$/, "") === CANCELLED
+/** Did the task this ask waited on end cancelled? What the client's doWork rejects with then is its CANCELLED. */
+const wasCancelled = (err, client) => String(err?.message ?? err).replace(/[.\s]+$/, "") === client?.CANCELLED
 
 /**
  * The rule, on what it reads off the copy and the watch:
@@ -167,7 +164,7 @@ export async function askWork(repo, sessionUrl, opts = {}) {
     return { asked: true, outcome: result?.outcome ?? null }
   } catch (err) {
     // Stopped, not failed: nothing to say.
-    if (counted && wasCancelled(err)) {
+    if (counted && wasCancelled(err, clientOf(opts))) {
       said(entry, null)
       return { asked: true, outcome: "cancelled" }
     }

@@ -21,7 +21,7 @@ import { makeMock } from "../fixtures/mock-provider.js"
 import { setHostUrls } from "../host/urls.js"
 import { askWork } from "../runners/ask.js"
 import { _reset } from "../runners/page.js"
-import { standIn } from "../fixtures/task-client.js"
+import { standIn } from "../fixtures/tasks-stand-in.js"
 
 await initSubduction()
 

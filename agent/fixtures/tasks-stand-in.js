@@ -2,6 +2,7 @@
 // in tests: the names the agent uses, hearing and stopping nothing unless a
 // test says. Its poolHere reads what the real one reads.
 export const standIn = (over = {}) => ({
+  CANCELLED: "The task was cancelled",
   POOL_ID_KEY: "patchwork-tasks-pool-id",
   poolHere: () => Object.keys(globalThis.patchworkTasks?.poolHosts ?? {}).length > 0,
   inSamePackage: () => null,

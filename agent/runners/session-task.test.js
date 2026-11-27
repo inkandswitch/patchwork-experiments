@@ -12,7 +12,7 @@ import { makeTurn, textBlock } from "../session/blocks.js"
 import { noteWrite } from "../knowledge/notes.js"
 import { SYNC_SERVERS } from "../net/guard.js"
 import { _holdClient } from "../host/import.js"
-import { standIn } from "../fixtures/task-client.js"
+import { standIn } from "../fixtures/tasks-stand-in.js"
 import sessionTask, { runFetch, rebased, runsOfTask } from "./session-task.js"
 
 await initSubduction()

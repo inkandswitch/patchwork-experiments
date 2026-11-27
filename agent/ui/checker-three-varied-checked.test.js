@@ -21,7 +21,7 @@ import { getDriver, letGo, _resetDrivers } from "../workflow/driver.js"
 import { initPlan, beginStep, changePlan, finishStep, settlePlan, PLAN } from "../workflow/plan.js"
 import { workflowReopen, workflowStop } from "../workflow/tools.js"
 import { WorkflowView } from "./workflow-view.js"
-import { standIn } from "../fixtures/task-client.js"
+import { standIn } from "../fixtures/tasks-stand-in.js"
 
 await initSubduction()
 

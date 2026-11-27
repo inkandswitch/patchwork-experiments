@@ -21,7 +21,7 @@ import { askWork, forget } from "../runners/ask.js"
 import { ensureDriver, getDriver, letGo, sessionHolder, _resetDrivers } from "../workflow/driver.js"
 import { initPlan, beginStep, changePlan, finishStep, settlePlan, reopenSteps, runAgain, PLAN } from "../workflow/plan.js"
 import { WorkflowView } from "./workflow-view.js"
-import { standIn } from "../fixtures/task-client.js"
+import { standIn } from "../fixtures/tasks-stand-in.js"
 
 await initSubduction()
 

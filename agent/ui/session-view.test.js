@@ -15,7 +15,7 @@ import { written } from "../fixtures/calls.js"
 import { STOP, stopOf } from "../session/status.js"
 import { findCall, findResult } from "../session/calls.js"
 import { NOT_RUN } from "../session/recovery.js"
-import { standIn, install } from "../fixtures/task-client.js"
+import { standIn, install } from "../fixtures/tasks-stand-in.js"
 import { setHostUrls } from "../host/urls.js"
 import { join } from "node:path"
 
@@ -305,7 +305,7 @@ describe("asking for the work, and the line under the composer", () => {
     const asked = []
     resetRunners(async (_repo, url) => (asked.push(url), { asked: true, outcome: "idle" }))
     // The page's registry, which has no task client until the package is installed.
-    setHostUrls({ "@inkandswitch/patchwork-plugins": join(process.cwd(), "fixtures", "task-client.js") })
+    setHostUrls({ "@inkandswitch/patchwork-plugins": join(process.cwd(), "fixtures", "tasks-stand-in.js") })
     try {
       localStorage.setItem("patchwork-agent:key:openrouter", "sk-or-test")
       const handle = fakeHandle()
