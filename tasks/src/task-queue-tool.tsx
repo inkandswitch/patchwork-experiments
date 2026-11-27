@@ -1,4 +1,4 @@
-import { createSignal, For, onCleanup, Show } from 'solid-js';
+import { createSignal, ErrorBoundary, For, onCleanup, Show } from 'solid-js';
 import { render } from 'solid-js/web';
 import './index.css';
 import type { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo/slim';
@@ -28,7 +28,9 @@ export const TaskQueueTool = (handle: DocHandle<Queue>, element: HTMLElement) =>
   return render(
     () => (
       <RepoContext.Provider value={hostRepo}>
-        <TaskQueueBrowser handle={handle} hostRepo={hostRepo} element={element} />
+        <ErrorBoundary fallback={(_, reset) => (setTimeout(reset, 2000), null)}>
+          <TaskQueueBrowser handle={handle} hostRepo={hostRepo} element={element} />
+        </ErrorBoundary>
       </RepoContext.Provider>
     ),
     element,

@@ -598,8 +598,8 @@ processes and say what they saw, one line per check or measurement:
   sees that under the site's provider own exists within 30 s, its url key is `true`, and the
   pool serves it (whether or not the site's frame made it first).
   Then: the pool worker and the run workers load from the package through the site's service
-  worker; ten do-nothing tasks are asked through the site's own (keyhive) Repo; the package's own task module, a throw, a spin cancelled and its
-  run worker gone, `served()`, and the queue browser's and badge's
+  worker; ten do-nothing tasks are asked through the site's own (keyhive) Repo; the package's
+  own task module, a throw, a spin cancelled and its run worker gone, `served()`, and the queue browser's and badge's
   lines; documents tasks write reach the site's Repo within 30 s;
   `doWork`, `watchWork` and `stopWork` from the page.
 - `probes/append-run.mjs` (after `pnpm build:node`): a Node host, through the real sync server,

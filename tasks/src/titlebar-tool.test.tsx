@@ -28,9 +28,15 @@ vi.mock('./helpers', async (importOriginal) => ({
   getAccountDocUrl: () => ACCOUNT,
 }));
 vi.mock('@automerge/automerge-repo-solid-primitives', () => ({
-  useDocSignal: (url: () => string | null) => [() => (url() ? docs[url()!] : undefined)],
+  useDocSignal: (url: () => string | null) => [
+    () => {
+      if (url() === QUEUE && notFound) throw new Error('unavailable');
+      return url() ? docs[url()!] : undefined;
+    },
+  ],
 }));
 
+let notFound = false;
 let making: { resolve: (url: string) => void; reject: (error: Error) => void } | null = null;
 const asked: unknown[][] = [];
 vi.mock('./task-client.js', async (importOriginal) => ({
@@ -64,6 +70,20 @@ vi.mock('./browser/pool-host', () => ({
 const { TaskTray } = await import('./titlebar-tool');
 
 describe('the badge', () => {
+  it('asks again every 2 s for a queue whose document cannot be found yet', () => {
+    vi.useFakeTimers();
+    notFound = true;
+    const element = document.createElement('div');
+    const dispose = TaskTray(element, {} as any);
+    expect(element.querySelector('.task-titlebar-count')).toBeNull();
+    notFound = false;
+    vi.advanceTimersByTime(2000);
+    expect(element.querySelector('.task-titlebar-count')!.textContent).toMatch(/listed/);
+    dispose();
+    vi.useRealTimers();
+  });
+
+
   it('starts nothing, and says for each pool state what this browser does for the queue and why', () => {
     const element = document.createElement('div');
     const dispose = TaskTray(element, {} as any);

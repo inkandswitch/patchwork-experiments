@@ -1,4 +1,4 @@
-import { createSignal, For, onCleanup, Show } from 'solid-js';
+import { createSignal, ErrorBoundary, For, onCleanup, Show } from 'solid-js';
 import { render } from 'solid-js/web';
 import './index.css';
 import type { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo/slim';
@@ -36,7 +36,12 @@ function mountTaskStatus(element: HTMLElement, hostRepo: Repo) {
   return render(() => {
     const [pool, setPool] = createSignal<PoolHostStatus>(NOT_STARTED);
     onCleanup(watchPoolHost(setPool));
-    return <TaskStatus element={element} hostRepo={hostRepo} pool={pool()} />;
+    // A document not yet found is asked for again every 2 s, as it was before.
+    return (
+      <ErrorBoundary fallback={(_, reset) => (setTimeout(reset, 2000), null)}>
+        <TaskStatus element={element} hostRepo={hostRepo} pool={pool()} />
+      </ErrorBoundary>
+    );
   }, element);
 }
 
