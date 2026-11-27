@@ -10,6 +10,9 @@
  * checked by the guard first; the relay checks again, and follows redirects
  * itself, checking each hop. Only GET and HEAD go through it: anything else
  * is sent from the page as before.
+ *
+ * Model APIs that answer no page at all (ChatGPT's plan route) go through the
+ * relay's lanes instead: laneFetch, and throughRelay for a provider.
  */
 
 import { Interruption } from "./network.js"
@@ -60,6 +63,77 @@ export function relayFetch({ fetch: send, relay }) {
     const error = response.headers?.get?.("x-relay-error")
     if (error) throw new Error(`The fetch relay did not fetch ${url}: ${error}.`)
     return asFetched(response, response.headers?.get?.("x-relay-final-url") || String(url))
+  }
+}
+
+/**
+ * Model APIs whose answers no page may read, and the relay's lane for each
+ * (fetch-relay/relay.js LANES; change them together). ChatGPT's plan route
+ * answers a page's request without CORS headers, so a page — or a browser
+ * pool's run — reaches it only through a relay. Node reaches it directly.
+ */
+export const API_LANES = {
+  "https://api.openai.com/v1/responses": "/openai/v1/responses",
+  "https://api.openai.com/v1/models": "/openai/v1/models",
+}
+
+/** No relay set, and a browser cannot reach this API without one. */
+export class RelayNeeded extends Error {
+  constructor(host) {
+    super(`${host} will not answer a web page directly, so in a browser the agent reaches it through the fetch relay. Set one in the agent's settings, under The web.`)
+    this.name = "RelayNeeded"
+    this.final = true
+  }
+}
+
+/**
+ * A fetch that sends API_LANES addresses through the relay `relay()` names,
+ * the request as it was (method, body, token) plus the relay's key, and
+ * everything else as `send` would. The answer is the API's own, streamed;
+ * only the relay's own failures say so (x-relay-error).
+ *
+ * A failure is `final` when asking again cannot help: no relay, or the relay
+ * refusing (a wrong key, say). The relay out of reach, or reporting the API
+ * out of reach, is an interruption: the run waits for the network.
+ */
+export function laneFetch({ fetch: send, relay }) {
+  if (typeof send !== "function") throw new Error("laneFetch needs the fetch it sends with.")
+  return async function laned(url, init = {}) {
+    const lane = API_LANES[String(url)]
+    if (!lane) return send(url, init)
+    const config = typeof relay === "function" ? relay() : relay
+    const host = new URL(String(url)).host
+    if (!config?.url) throw new RelayNeeded(host)
+
+    const headers = { ...headerObject(init.headers) }
+    if (config.key) headers["x-relay-key"] = config.key
+    let response
+    try {
+      response = await send(`${config.url}${lane}`, { ...init, headers })
+    } catch (err) {
+      if (init.signal?.aborted) throw err
+      throw new Interruption(`The fetch relay could not be reached (${err?.message ?? err})`, { cause: err })
+    }
+    const error = response.headers?.get?.("x-relay-error")
+    if (!error) return response
+    if (response.status === 502) throw new Interruption(`The fetch relay could not reach ${host} (${error})`)
+    const refused = new Error(`The fetch relay refused to pass this on to ${host}: ${error}.`)
+    refused.final = true
+    throw refused
+  }
+}
+
+/**
+ * The provider with its requests sent by laneFetch: the addresses in
+ * API_LANES through the relay, any other as before. For a browser; Node
+ * reaches every API directly.
+ */
+export function throughRelay(provider, relay) {
+  const fetchFor = (given) => laneFetch({ fetch: given ?? ((url, init) => fetch(url, init)), relay })
+  return {
+    ...provider,
+    stream: (request) => provider.stream({ ...request, fetchImpl: fetchFor(request?.fetchImpl) }),
+    ...(typeof provider.models === "function" ? { models: (opts = {}) => provider.models({ ...opts, fetchImpl: fetchFor(opts.fetchImpl) }) } : {}),
   }
 }
 

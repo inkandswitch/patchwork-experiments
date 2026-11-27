@@ -11,11 +11,12 @@
  * spelling of a target and of each redirect.
  */
 
-import { handle } from "./relay.js"
+import { handle, LANES } from "./relay.js"
 
 export default {
   async fetch(request, env) {
-    if (new URL(request.url).pathname !== "/fetch" && request.method !== "OPTIONS") {
+    const path = new URL(request.url).pathname
+    if (path !== "/fetch" && !LANES[path] && request.method !== "OPTIONS") {
       return new Response("Patchwork fetch relay. GET /fetch?url=…", { status: 404 })
     }
     return handle(request, {

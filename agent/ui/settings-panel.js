@@ -39,6 +39,7 @@ import {
   SEARCH_KEY_ID,
 } from "../providers/keys.js"
 import { loadCatalogue } from "../providers/catalogue.js"
+import { laneFetch } from "../net/relay.js"
 import { getProvider, listProviders, defaultsOf } from "../providers/index.js"
 import { USAGE_URL } from "../providers/chatgpt.js"
 import { DEFAULT_CONFIG } from "../session/schema.js"
@@ -231,8 +232,8 @@ export function createSettingsPanel({ store, onKey = () => {}, onChange = () => 
   const waitingSteps = el("ol", "agent-chatgpt-steps")
   waitingSteps.append(
     el("li", null, "Approve Patchwork in the ChatGPT tab that opened."),
-    el("li", null, "ChatGPT then sends your browser to an address starting http://127.0.0.1:1455 that does not load. That is expected."),
-    el("li", null, "Copy that whole address from the address bar and paste it here.")
+    el("li", null, "That tab then says “127.0.0.1 refused to connect”. That is expected: the sign-in is in the page's address."),
+    el("li", null, "Copy that whole address from the address bar (it starts http://127.0.0.1:1455/auth/callback) and paste it here.")
   )
   const pasteRow = el("div", "agent-row")
   pasteRow.append(pasteInput, connect)
@@ -240,7 +241,10 @@ export function createSettingsPanel({ store, onKey = () => {}, onChange = () => 
   waitingBox.append(waitingSteps, pasteRow, startOver)
   const signedInRow = el("div", "agent-row")
   signedInRow.append(usageLink, signOut)
-  chatgptBox.append(chatgptStatus, signInLink, waitingBox, signedInRow, forget, welcome, chatgptError)
+  // ChatGPT answers no web page directly; a browser reaches it through the relay (net/relay.js).
+  const relayNeeded = el("p", "agent-chatgpt-relay", "A browser reaches ChatGPT only through the fetch relay: set one under The web.")
+  relayNeeded.hidden = true
+  chatgptBox.append(chatgptStatus, relayNeeded, signInLink, waitingBox, signedInRow, forget, welcome, chatgptError)
 
   const credentialBox = el("div", "agent-credentials")
   credentialBox.append(keyBox, chatgptBox)
@@ -343,7 +347,7 @@ export function createSettingsPanel({ store, onKey = () => {}, onChange = () => 
       el("span", "agent-field-label", "Fetch relay"),
       relayInput,
       relayKeyInput,
-      note("Most sites will not let a browser page read them, so without a relay the agent keeps a reader's text of each page and a PDF only when the site allows. A relay fetches for it, and the PDF or page itself is kept as the source. Stored with your API keys."),
+      note("Most sites will not let a browser page read them, so without a relay the agent keeps a reader's text of each page and a PDF only when the site allows. A relay fetches for it, and the PDF or page itself is kept as the source. ChatGPT, which answers no page directly, goes through it too. Stored with your API keys."),
       el("span", "agent-field-label", "Web search"),
       searchKeyInput,
       note("Searches go to Brave's Search API (api-dashboard.search.brave.com), which needs a key and, in a browser, the fetch relay above. Stored with your API keys.")
@@ -529,6 +533,7 @@ export function createSettingsPanel({ store, onKey = () => {}, onChange = () => 
     keyBox.hidden = chosen !== "openrouter"
     chatgptBox.hidden = chosen !== "chatgpt"
     if (chosen !== "chatgpt") return
+    relayNeeded.hidden = !!readRelay()?.url
     const status = chatgptAuth.status()
     const state = chatGPTState(status)
     signInLink.hidden = state === "signed-in" || state === "waiting"
@@ -625,7 +630,7 @@ export function createSettingsPanel({ store, onKey = () => {}, onChange = () => 
       return
     }
     try {
-      const { models: loaded, cached, error } = await loadCatalogue(id, { force, key })
+      const { models: loaded, cached, error } = await loadCatalogue(id, { force, key, fetchImpl: laneFetch({ fetch: (url, init) => fetch(url, init), relay: () => readRelay() }) })
       if (id !== providerId()) return
       models = loaded
       modelsFor = id

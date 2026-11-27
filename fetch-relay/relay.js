@@ -12,13 +12,18 @@
  *          x-relay-final-url   where redirects ended
  *          x-relay-error       set only when the relay itself refused or failed
  *
+ *   <relay>/openai/v1/responses (POST), <relay>/openai/v1/models (GET)
+ *   →    a model API that answers no page (LANES): one fixed address each,
+ *        the person's token passed there alone, the answer streamed back
+ *
  * What it will not do, whatever it is asked:
  *   - fetch anything but http(s) on a public address (guard.js, the same table
  *     the agent uses), checked at the target, at every redirect, and — where a
  *     resolver is given — at every address the name resolves to;
  *   - send anything but GET or HEAD, or forward cookies, credentials or any
  *     header but a few harmless ones — save one credential for one host
- *     (CREDENTIALS: Brave Search's key, to Brave's API alone);
+ *     (CREDENTIALS: Brave Search's key, to Brave's API alone) — except on a
+ *     LANE, which sends its one method to its one fixed address;
  *   - return more than `maxBytes`, or wait longer than `timeoutMs`;
  *   - pass a site's cookies back.
  * And, as configured: answer only a request carrying `key`, and only pages
@@ -46,6 +51,26 @@ const FORWARD = ["accept", "accept-language", "range", "if-none-match", "if-modi
  */
 export const CREDENTIALS = { "api.search.brave.com": ["x-subscription-token"] }
 
+/**
+ * Model APIs whose answers no page may read, each on a path of its own.
+ *
+ * ChatGPT's plan route answers a page's request without CORS headers, so the
+ * agent in a browser cannot read a reply. A lane goes to one fixed address
+ * with one method: nothing in the request chooses where it goes, so there is
+ * no target to guard. It passes on the person's `authorization` — to that
+ * address alone — and streams the answer back as it comes, since a reply runs
+ * for minutes. The agent's net/relay.js has the same table (API_LANES);
+ * change them together.
+ */
+export const LANES = {
+  "/openai/v1/responses": { method: "POST", target: "https://api.openai.com/v1/responses" },
+  "/openai/v1/models": { method: "GET", target: "https://api.openai.com/v1/models" },
+}
+
+/** What a lane passes on, each way. */
+const LANE_FORWARD = ["authorization", "content-type", "accept"]
+const LANE_RETURN = ["content-type", "x-request-id", "retry-after"]
+
 /** Response headers passed back; never set-cookie. */
 const RETURN = ["content-type", "content-language", "content-disposition", "last-modified", "etag", "content-range"]
 
@@ -71,6 +96,9 @@ export async function handle(request, options = {}) {
   const origin = request.headers.get("origin")
   const cors = corsHeaders(origin, config.origins)
   if (cors === null) return refuse(403, "this page's origin may not use the relay", {})
+
+  const lane = LANES[new URL(request.url).pathname]
+  if (lane) return await laned(request, lane, config, cors)
 
   const method = String(request.method ?? "GET").toUpperCase()
   if (method === "OPTIONS") return new Response(null, { status: 204, headers: { ...cors, "access-control-allow-methods": "GET, HEAD", "access-control-allow-headers": `x-relay-key, accept, range, ${[...new Set(Object.values(CREDENTIALS).flat())].join(", ")}`, "access-control-max-age": "86400" } })
@@ -109,6 +137,55 @@ export async function handle(request, options = {}) {
   } finally {
     clearTimeout(timer)
   }
+}
+
+/**
+ * A request on a lane: its one method to its one address, the body as sent
+ * (up to maxBytes), the answer's body streamed back untouched. The timeout
+ * covers waiting for the answer to begin, not the answer: a model may stream
+ * for many minutes. A page that goes away cancels the request upstream.
+ */
+async function laned(request, lane, config, cors) {
+  const method = String(request.method ?? "GET").toUpperCase()
+  if (method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: { ...cors, "access-control-allow-methods": lane.method, "access-control-allow-headers": "x-relay-key, authorization, content-type, accept", "access-control-max-age": "86400" } })
+  }
+  if (method !== lane.method) return refuse(405, `only ${lane.method} is relayed here`, cors)
+  if (config.key && request.headers.get("x-relay-key") !== config.key) return refuse(401, "missing or wrong x-relay-key", cors)
+
+  const headers = { "user-agent": config.userAgent ?? USER_AGENT }
+  for (const name of LANE_FORWARD) {
+    const value = request.headers.get(name)
+    if (value) headers[name] = value
+  }
+  let body
+  if (method === "POST") {
+    body = await readCapped(request, config.maxBytes)
+    if (body === null) return refuse(413, `the request is more than the ${config.maxBytes} bytes relayed`, cors)
+  }
+
+  const controller = new AbortController()
+  request.signal?.addEventListener?.("abort", () => controller.abort(), { once: true })
+  const timer = setTimeout(() => controller.abort(), config.timeoutMs)
+  let response
+  try {
+    response = await config.fetch(lane.target, { method, headers, body, redirect: "manual", signal: controller.signal })
+  } catch (err) {
+    const why = controller.signal.aborted ? `no answer within ${config.timeoutMs} ms` : String(err?.message ?? err)
+    return refuse(502, why, cors)
+  } finally {
+    clearTimeout(timer)
+  }
+  if (REDIRECTS.has(response.status)) {
+    response.body?.cancel?.()
+    return refuse(502, `${new URL(lane.target).host} redirected, and a lane does not follow`, cors)
+  }
+  const out = { ...cors, "cache-control": "no-store" }
+  for (const name of LANE_RETURN) {
+    const value = response.headers.get(name)
+    if (value) out[name] = value
+  }
+  return new Response(response.body, { status: response.status, headers: out })
 }
 
 /** The credentials the page sent that `url`'s host may have: none, but for CREDENTIALS. */
@@ -199,7 +276,7 @@ export function corsHeaders(origin, origins) {
   if (list && !list.includes(origin)) return null
   return {
     "access-control-allow-origin": list ? origin : "*",
-    "access-control-expose-headers": "x-relay-final-url, x-relay-error, content-type, content-disposition, content-length",
+    "access-control-expose-headers": "x-relay-final-url, x-relay-error, content-type, content-disposition, content-length, x-request-id, retry-after",
     vary: "origin",
   }
 }

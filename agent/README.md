@@ -77,7 +77,11 @@ provider's credential where it belongs, never in the session.
   token when it asks for a run; a run whose token runs out ends for a fresh
   one. Each reply's encrypted reasoning and message phases go back with it
   (the turn's `carry`), the system prompt goes first as a developer message, and a
-  feature the plan route refuses is dropped and the request sent again.
+  feature the plan route refuses is dropped and the request sent again. The
+  plan route answers no page (a real reply carries no CORS headers, though its
+  refusals do), so in a browser replies and the model list go through the
+  fetch relay's lanes (`net/relay.js` `throughRelay`); with no relay set the
+  run says so at once. Node reaches it directly.
 
 A module imports from its own directory and the directories below it, and from
 nowhere else. `boundary.test.js` holds the order and fails on anything that

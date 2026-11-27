@@ -711,7 +711,8 @@
   display: none;
 }
 
-.patchwork-agent .agent-settings .agent-error {
+.patchwork-agent .agent-settings .agent-error,
+.patchwork-agent .agent-settings .agent-chatgpt-relay {
   color: var(--agent-danger-text);
 }
 

@@ -219,6 +219,23 @@ describe("signing in to ChatGPT from the panel", () => {
   afterEach(() => vi.unstubAllGlobals())
   const button = (panel, text) => [...panel.element.querySelectorAll("button")].find((b) => b.textContent === text)
 
+  it("says a browser needs the fetch relay for ChatGPT until one is set", () => {
+    localStorage.removeItem("patchwork-agent:relay")
+    const store = memoryStore(session({ providerId: "chatgpt", model: "gpt-6.2-sol" }))
+    const panel = createSettingsPanel({ store })
+    document.body.replaceChildren(panel.element)
+    panel.render(store.doc())
+    panel.toggle()
+    const relayNote = panel.element.querySelector(".agent-chatgpt-relay")
+    expect(relayNote.hidden).toBe(false)
+    expect(relayNote.textContent).toMatch(/fetch relay/)
+    localStorage.setItem("patchwork-agent:relay", JSON.stringify({ url: "https://relay.test", key: "" }))
+    panel.toggle()
+    panel.toggle()
+    expect(relayNote.hidden).toBe(true)
+    localStorage.removeItem("patchwork-agent:relay")
+  })
+
   it("opens ChatGPT with a link made ahead, takes the pasted address, and shows the plan in use", async () => {
     const store = memoryStore(session({ providerId: "chatgpt", model: "gpt-6.2-sol" }))
     const told = []

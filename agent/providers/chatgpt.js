@@ -560,8 +560,10 @@ export async function* stream({
     } catch (err) {
       dog.stop()
       if (signal?.aborted) throw err
+      // Nothing asking again can mend: no relay in a browser, or the relay refusing (net/relay.js).
+      if (err?.final) throw err
       const why = dog.fired() ? `no answer for ${quietMs / 1000} s` : String(err?.message ?? err)
-      lastError = new Interruption(`Could not reach ChatGPT (${why})`, { cause: err })
+      lastError = err?.interruption && !dog.fired() ? err : new Interruption(`Could not reach ChatGPT (${why})`, { cause: err })
       if (attempt === maxAttempts) throw lastError
       const delay = 500 * 2 ** (attempt - 1)
       onRetry?.({ attempt, delay, reason: why })

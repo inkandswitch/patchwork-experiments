@@ -11,7 +11,8 @@
 
 import { createServer } from "node:http"
 import { lookup } from "node:dns/promises"
-import { handle } from "./relay.js"
+import { Readable } from "node:stream"
+import { handle, LANES } from "./relay.js"
 
 const port = Number(process.env.PORT ?? 8787)
 const options = {
@@ -28,16 +29,29 @@ if (!options.key) console.warn("RELAY_KEY is not set: anyone who finds this rela
 createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`)
-    if (url.pathname !== "/fetch" && req.method !== "OPTIONS") {
+    if (url.pathname !== "/fetch" && !LANES[url.pathname] && req.method !== "OPTIONS") {
       res.writeHead(404, { "content-type": "text/plain" }).end("Patchwork fetch relay. GET /fetch?url=…")
       return
     }
     const headers = new Headers()
     for (const [name, value] of Object.entries(req.headers)) if (typeof value === "string") headers.set(name, value)
-    const response = await handle({ method: req.method, url: url.href, headers }, options)
+    // A page that goes away cancels the request upstream (a lane streams for minutes).
+    const gone = new AbortController()
+    res.on("close", () => gone.abort())
+    const hasBody = req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS"
+    const request = new Request(url.href, { method: req.method, headers, signal: gone.signal, ...(hasBody ? { body: Readable.toWeb(req), duplex: "half" } : {}) })
+    const response = await handle(request, options)
     res.writeHead(response.status, Object.fromEntries(response.headers))
-    res.end(response.body ? Buffer.from(await response.arrayBuffer()) : undefined)
+    if (!response.body) {
+      res.end()
+      return
+    }
+    // Streamed, not gathered: a lane's answer arrives over minutes.
+    const body = Readable.fromWeb(response.body)
+    body.on("error", () => res.destroy())
+    body.pipe(res)
   } catch (err) {
-    res.writeHead(500, { "content-type": "text/plain" }).end(String(err?.message ?? err))
+    if (!res.headersSent) res.writeHead(500, { "content-type": "text/plain" })
+    res.end(String(err?.message ?? err))
   }
 }).listen(port, () => console.log(`fetch relay on :${port}`))
