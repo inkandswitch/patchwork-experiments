@@ -1,8 +1,8 @@
 // How a document travels between a task and whoever asked for it, on Node
-// hosts through the real sync server. A run thread's Repo has storage and a
-// socket of its own, so what a task writes through ctx.repo reaches the asker
-// only by way of the sync server, and so does what the asker made for the
-// task to read. This measures that path per size; it checks nothing and
+// hosts through the real sync server. A run thread's Repo is piped to the
+// host's Repo, which has the storage and the socket, so what a task writes
+// through ctx.repo reaches the asker by way of the host and the sync server,
+// and so does what the asker made for the task to read. This measures that path per size; it checks nothing and
 // fails nothing, it says what it saw.
 //
 //   (in tasks/, after `pnpm build:node`)
@@ -22,8 +22,7 @@
 //       it holds what was written before it returns (probes/write-path/task.js).
 // term  out at 5 MB from a host of its own that is sent SIGTERM the moment
 //       the asker reads succeeded: the document must still come. If it has
-//       not, the host is restarted on the same data directory, then asked for
-//       a task so that it opens its run thread's storage again.
+//       not, the host is restarted on the same data directory.
 //
 // Each document may take 120 s to arrive; past that it counts as a failure,
 // with what was observed. Everything made is a throwaway document; nothing is
@@ -286,14 +285,6 @@ try {
         const tRestart = now();
         const second = await reach(fresh, doc.url, size, doc.sha256, 60_000);
         row.afterRestart = { ok: second.ok, ms: second.ms, firstFind: second.firstFind, finds: second.finds, rejections: shortRejections(second.rejections), observed: second.observed };
-        if (!second.ok) {
-          // The restarted host opens its run thread's storage only for a job.
-          await within(60_000, run(repo, QT, { importUrl: NOOP, input: "open the thread", key: `wp-topen-${process.pid}-${i}` }), "a task on the restarted host");
-          const fresher = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
-          const third = await reach(fresher, doc.url, size, doc.sha256, 60_000);
-          row.afterAThreadOpens = { ok: third.ok, ms: third.ms, firstFind: third.firstFind, finds: third.finds, rejections: shortRejections(third.rejections), observed: third.observed, sinceRestartMs: Math.round(now() - tRestart) };
-          await fresher.shutdown().catch(() => {});
-        }
         await fresh.shutdown().catch(() => {});
         R.child.kill("SIGTERM");
         await within(20_000, R.exited, "the restarted host stopping").catch(() => R.child.kill("SIGKILL"));

@@ -6,9 +6,9 @@
 // makes with nothing pressed, and measure how a document travels between a
 // task's run worker and this page.
 //
-// The run worker's Repo keeps its documents in a database of its own and
-// meets this page's Repos only at the sync server, so that is the path
-// measured. The "site" Repo here is a plain Repo, as the tasks Repo is: the
+// The run worker's Repo is piped to the pool's host Repo and has no socket,
+// so this measures the path from a run worker through the host to the sync server.
+// The "site" Repo here is a plain Repo, as the tasks Repo is: the
 // deployed site's own Repo is a keyhive Repo, which this is not.
 import { Repo } from '@automerge/automerge-repo/slim';
 import { IndexedDBStorageAdapter } from '@automerge/automerge-repo-storage-indexeddb';
@@ -25,8 +25,6 @@ const [automergeWasm, subductionWasm] = await Promise.all([
 initSync(new Uint8Array(subductionWasm));
 await initializeWasm(new Uint8Array(automergeWasm));
 
-// The pool and its run workers read the sync server from here (repo-config.ts).
-localStorage.setItem('tasksSyncServerUrl', SYNC);
 const repo = new Repo({
   storage: new IndexedDBStorageAdapter('patchwork-tasks'),
   peerId: `write-path-tab-${crypto.randomUUID()}`,

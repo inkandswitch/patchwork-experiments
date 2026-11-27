@@ -8,12 +8,12 @@
 import { Repo, parseAutomergeUrl } from '@automerge/automerge-repo/slim';
 import { IndexedDBStorageAdapter } from '@automerge/automerge-repo-storage-indexeddb';
 import { decodeChange, getActorId, getAllChanges, initializeWasm } from '@automerge/automerge/slim';
-import { initSync, SedimentreeId } from '@automerge/automerge-subduction/slim';
+import { initSync } from '@automerge/automerge-subduction/slim';
 import { plugins } from '/dist/index.js';
 
 // Nothing listens here, and no document leaves this machine. This tab's Repo
-// and the pool's work from the shared database alone; each run worker's
-// Repo has a database of its own, and what a task writes through ctx.repo
+// and the pool's work from the shared database alone; each worker's Repo
+// has no storage, and what a task writes through ctx.repo
 // reaches this page by the pipe the pool host makes to the Repo it is given
 // (src/browser/pool-host.ts; checks 15 and 19). A page opened with `?sync=`
 // works through that sync server too, as a site does (check 22).
@@ -39,7 +39,6 @@ const [automergeWasm, subductionWasm] = await Promise.all([
 initSync(new Uint8Array(subductionWasm));
 await initializeWasm(new Uint8Array(automergeWasm));
 
-localStorage.setItem('tasksSyncServerUrl', SYNC);
 const repo = new Repo({
   storage: new IndexedDBStorageAdapter('patchwork-tasks'),
   peerId: `probe-tab-${crypto.randomUUID()}`,
@@ -280,40 +279,12 @@ const probe = {
       // the one each pool's worker holds for its life (pool-worker.ts)
       workerHeld: count(held, 'patchwork-tasks-pool-worker'),
       workerPending: count(pending, 'patchwork-tasks-pool-worker'),
-      // the one each run worker holds for its life, named as its database (webworker-lib.ts)
-      runHeld: held.map((lock) => lock.name).filter((name) => /^patchwork-tasks-run-\d+$/.test(name)).sort(),
     };
   },
 
-  /**
-   * Which of this origin's task databases have stored anything of the
-   * document `url`: the shared one, and each run worker's. Read straight
-   * from IndexedDB, by the key the Repo stores a document's id under (its
-   * sedimentree id, made as the Repo makes it), and never opening a
-   * database that does not exist (that would make it).
-   */
-  async storedIn(url) {
-    const id = parseAutomergeUrl(url).binaryDocumentId;
-    const padded = new Uint8Array(32);
-    padded.set(id.subarray(0, 32));
-    const sid = SedimentreeId.fromBytes(padded).toString();
-    const names = (await indexedDB.databases()).map((db) => db.name).filter((name) => /^patchwork-tasks(-run-\d+)?$/.test(name));
-    const found = [];
-    for (const name of names) {
-      const keys = await new Promise((resolve, reject) => {
-        const open = indexedDB.open(name);
-        open.onerror = () => reject(open.error);
-        open.onsuccess = () => {
-          const db = open.result;
-          if (!db.objectStoreNames.contains('documents')) return resolve((db.close(), []));
-          const request = db.transaction('documents').objectStore('documents').getAllKeys();
-          request.onsuccess = () => resolve((db.close(), request.result));
-          request.onerror = () => reject(request.error);
-        };
-      });
-      if (keys.some((key) => JSON.stringify(key).includes(sid))) found.push(name);
-    }
-    return { databases: names.sort(), found };
+  /** The IndexedDB databases of this origin whose names are a run worker's or the pool worker's own: none, since a worker has no storage. */
+  async workerDatabases() {
+    return (await indexedDB.databases()).map((db) => db.name).filter((name) => /^patchwork-tasks-run-\d+$/.test(name));
   },
 
   /**

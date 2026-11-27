@@ -5,8 +5,8 @@
 // in the package's plugin list, and its real titlebar tool) and asks through
 // the built task client (the package's library). Task
 // code comes from data: URLs and from a file served here. No sync server is reached but by checks 24, 22, 26 to 30, 41
-// and 42: the pages' Repos and the pool's work from the profile's shared database, and
-// each run worker's from a database of its own. What a task writes through
+// and 42: the pages' Repos and the pool's work from the profile's shared database.
+// The workers have no storage or socket of their own: what a task writes through
 // ctx.repo reaches the page by the pipe the pool host makes to the Repo the
 // page hands it (src/browser/pool-host.ts; checks 15 and 19). Checks 26 to 30
 // run in a browser context whose pages have a site Repo of their own, sharing
@@ -1210,12 +1210,10 @@ try {
   }
 
   // 13 and 14. A task that has used ctx.repo spins, its worker's Repo
-  // perhaps in the middle of a write. Every run worker keeps its documents in
-  // a database of its own, so what its blocked thread holds open holds up
-  // nobody else: the page's stop is saved at once, the pool hears it and ends
-  // the worker GRACE_MS later (gone about 2 s after that), and the next task
-  // runs. (With every Repo on one database, the page's save of the stop
-  // waited on the spinning worker for over a minute.)
+  // perhaps in the middle of a write. A run worker has no storage, so what
+  // its blocked thread holds open holds up nobody else: the page's stop is
+  // saved at once, the pool hears it and ends the worker GRACE_MS later (gone
+  // about 2 s after that), and the next task runs.
   const spinThenCancel = async (importUrl, tag) => {
     const key = await F.js(`probe.ask(${J(importUrl)}, ${J({ tag })})`);
     await F.waitFor(stateIs(key, "running"), 20_000);
@@ -1273,39 +1271,35 @@ try {
   }
 
   // 15. Two tasks at once, in two run workers, each writing a document of its
-  // own through ctx.repo. Shown: both run at once, each holding its own
-  // database's lock; each result and record reaches the page (the pool writes
-  // those); each document is stored in exactly one run worker's database, a
-  // different one for each, and reaches the page's Repo through that run
-  // worker's link (this harness has no sync server: its Repos point at
-  // ws://127.0.0.1:9), which keeps it in the shared database.
+  // own through ctx.repo. Shown: both run at once; each result and record
+  // reaches the page (the pool writes those); each document reaches the
+  // page's Repo through its run worker's pipe (this harness has no sync
+  // server: its Repos point at ws://127.0.0.1:9); and no worker made a
+  // database of its own.
   {
     const keys = [];
     for (const tag of ["fifteen-a", "fifteen-b"]) keys.push(await F.js(`probe.ask(${J(WRITES)}, ${J({ tag, ms: 3_000 })})`));
     await F.waitFor(keys.map((k) => stateIs(k, "running")).join(" && "), 20_000);
     await sleep(1_000);
-    const during = (await F.js("probe.locks()")).runHeld;
+    const during = liveWorkers(F, /run-worker-entry/).length;
     for (const k of keys) await F.waitFor(stateIs(k, "succeeded", "failed", "cancelled"), 20_000);
     const lasts = [];
     for (const k of keys) lasts.push(await F.js(`probe.last(${J(k)})`));
     const urls = lasts.map((l) => l.result);
-    const stored = [];
     const pageHas = [];
     for (const url of urls) {
       const ok = typeof url === "string" && url.startsWith("automerge:");
-      stored.push(ok ? await F.js(`probe.storedIn(${J(url)})`) : null);
       pageHas.push(ok ? await F.js(`probe.has(${J(url)}, 2000)`) : null);
     }
-    const homes = stored.map((s) => s?.found ?? []);
+    const databases = await F.js("probe.workerDatabases()");
     check(
-      "15 two tasks at once in two run workers, each writing its own document: both run, each document is stored in one run worker's database, its own, and reaches the page's Repo through that worker's link; results and records reach the page",
+      "15 two tasks at once in two run workers, each writing its own document: both run, each document reaches the page's Repo through its worker's pipe, results and records reach the page, and no worker has a database of its own",
       lasts.every((l) => l.state === "succeeded" && J(runsOf(l)) === J(["succeeded"])) &&
         new Set(urls).size === 2 &&
-        during.length >= 2 &&
-        homes.every((h) => h.filter((name) => /^patchwork-tasks-run-\d+$/.test(name)).length === 1 && h.every((name) => /^patchwork-tasks(-run-\d+)?$/.test(name))) &&
-        homes[0].find((name) => name !== "patchwork-tasks") !== homes[1].find((name) => name !== "patchwork-tasks") &&
+        during >= 2 &&
+        databases.length === 0 &&
         pageHas.every((has) => has === true),
-      `run locks held while both ran ${J(during)}; ${lasts.map((l, i) => `${l.state} ${J(runsOf(l))} → ${String(urls[i]).slice(0, 22)}… stored in ${J(homes[i])}`).join("; ")}; task databases ${J(stored[0]?.databases)}; the page's Repo has the documents: ${J(pageHas)} (no sync server here: through the link)`,
+      `${during} run workers while both ran; ${lasts.map((l, i) => `${l.state} ${J(runsOf(l))} → ${String(urls[i]).slice(0, 22)}…`).join("; ")}; worker databases ${J(databases)}; the page's Repo has the documents: ${J(pageHas)} (no sync server here: through the pipes)`,
     );
   }
 
