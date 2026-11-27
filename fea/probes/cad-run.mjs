@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync, mkdirSync } from "node:fs";
 import { browser, checklist, sleep } from "./cdp.mjs";
-import { localRun } from "./lib.mjs";
+import { localRun, TASKS } from "./lib.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const arg = (name, fallback = null) => {
@@ -39,7 +39,7 @@ difference() {
 }
 `;
 
-const b = await browser({ root: PKG, port: Number(process.env.PROBE_PORT) || 4799, cdp: Number(process.env.PROBE_CDP) || 9799, page: "/probes/ui-probe.html?plugins=/openscad/dist/index.js", width: 1300, height: 900, show: process.argv.includes("--show"), timeout: 300_000, mounts: { "/openscad/": join(WITH, "openscad") } });
+const b = await browser({ root: PKG, port: Number(process.env.PROBE_PORT) || 4799, cdp: Number(process.env.PROBE_CDP) || 9799, page: "/probes/ui-probe.html?plugins=/openscad/dist/index.js,/tasks/dist/index.js", width: 1300, height: 900, show: process.argv.includes("--show"), timeout: 300_000, mounts: { "/openscad/": join(WITH, "openscad"), "/tasks/": TASKS } });
 const P = (e) => b.js(`window.__p.${e}`);
 const until = (expr, ms = 20_000) => b.waitFor(expr, ms, 60);
 const list = checklist();

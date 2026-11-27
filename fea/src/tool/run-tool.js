@@ -2,13 +2,13 @@
 // (Its results on the part are in the study it came from, and in a scene.)
 // While it hasn't ended, its task is followed too: what the run doc can't
 // say (cancelled before it started, a machine that stopped) is read from it
-// (shownRun), and Cancel is said to it.
+// (shownRun), and Cancel is said to it. The Tasks package's client is the
+// library tasks-next, had as the tool opens and kept until it closes; where
+// the package isn't installed the tool says so and waits.
 
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import css from "./styles.css?inline";
-import { isTerminal } from "../protocol.js";
 import { figures, inputs, statusLine } from "../results.js";
-import { cancelRun, shownRun } from "../task-runs.js";
-import { watch } from "../task-client.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
@@ -20,27 +20,18 @@ export default function RunTool(handle, element) {
   element.append(style, root);
   const open = (url, toolId) => element.dispatchEvent(new CustomEvent("patchwork:open-document", { detail: { url, toolId }, bubbles: true, composed: true }));
   const repo = handle.repo ?? window.repo;
+  let tasks = null; // the Tasks package's client
   let task = null; // the run's task as followed ({ state, error })
   let cancelAsked = false;
-  const first = handle.doc();
-  const unwatch =
-    first?.server && !isTerminal(first.status)
-      ? watch(
-          repo,
-          first.server,
-          handle.url,
-          (view) => {
-            task = { state: view.state, error: view.error, runs: view.runs };
-            render();
-          },
-          first.task ? { from: first.task } : {},
-        )
-      : () => {};
+  let unwatch = () => {};
+  let clock = null;
+  let closed = false;
   const render = () => {
+    if (!tasks) return;
     const raw = handle.doc() ?? {};
-    const shown = shownRun(raw, task);
+    const shown = tasks.shownRun(raw, task);
     const run = { ...raw, status: shown.status, error: shown.error };
-    const going = !isTerminal(run.status);
+    const going = !tasks.isRunEnded(run.status);
     const note = task?.state === "stopping" || (cancelAsked && going) ? "cancelling…" : shown.note;
     let group = null;
     const rows = figures(run)
@@ -71,7 +62,7 @@ export default function RunTool(handle, element) {
       cancelAsked = true;
       render();
       // a cancel that cancels nothing (the queue no longer lists it) shows Cancel again
-      cancelRun(repo, handle.doc(), handle.url).then(
+      tasks.cancelRun(repo, handle.doc(), handle.url).then(
         (stopped) => {
           if (!stopped) cancelAsked = false;
           render();
@@ -84,10 +75,29 @@ export default function RunTool(handle, element) {
     }
   };
   root.addEventListener("click", click);
-  render();
-  handle.on("change", render);
-  const clock = setInterval(render, 5000);
+  const libraries = getRegistry("patchwork:library");
+  if (!libraries.has("tasks-next")) root.textContent = "This needs the Tasks package, which is not installed here.";
+  libraries.loadWhenReady("tasks-next").then(({ module }) => {
+    if (closed) return;
+    tasks = module;
+    const first = handle.doc();
+    if (first?.server && !tasks.isRunEnded(first.status))
+      unwatch = tasks.watch(
+        repo,
+        first.server,
+        handle.url,
+        (view) => {
+          task = { state: view.state, error: view.error, runs: view.runs };
+          render();
+        },
+        first.task ? { from: first.task } : {},
+      );
+    render();
+    handle.on("change", render);
+    clock = setInterval(render, 5000);
+  });
   return () => {
+    closed = true;
     unwatch();
     clearInterval(clock);
     handle.off("change", render);

@@ -1,17 +1,19 @@
 // The agent's tools over a fake repo: a box and a plate with a hole as GLB
-// file docs, a task queue a fake machine says it serves, and the finite
+// file docs, a task queue a fake machine is heard serving, and the finite
 // cases each tool decides: the
 // face report, setting up on its face numbers, running, the results, stopping,
-// and every refusal (each says what is allowed and writes nothing).
+// and every refusal (each says what is allowed and writes nothing). The Tasks
+// package's client is a stand-in (src/test/tasks-stand-in.js), registered as
+// the library tasks-next.
 
 import { readFileSync } from "node:fs";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { FakeRepo } from "./test/fake-repo.js";
+import { standIn } from "./test/tasks-stand-in.js";
 import { encodeGLB } from "./glb.js";
 import { box, plateWithHole } from "./test/shapes.js";
 import { newRun, STUDY_TYPE, RUN_TYPE } from "./protocol.js";
-import { setPackageUrl } from "./task-runs.js";
 import { RUN_CODE } from "./protocol.js";
-import { taskState, allHeard } from "./task-rules.js";
 import { normalizeSetup, MAX_MODES } from "./setup.js";
 import { unitsOf } from "./units.js";
 import { MATERIALS } from "./materials.js";
@@ -23,19 +25,12 @@ import { AGENT_TOOLS } from "./agent-meta.js";
 const SESSION = "automerge:session";
 const glbFile = (repo, name, tris) => repo.add({ "@patchwork": { type: "file" }, name: `${name}.glb`, extension: "glb", content: encodeGLB({ meshes: [{ name, positions: Float32Array.from(tris) }] }) });
 
-const PACKAGE = "automerge:feaTestPackageAbc";
-let repo, ctx, boxUrl, plateUrl, server, folder, beating;
-/** A machine serving the queue says so every so often (task-client.js's `served` hears it). */
-function serveQueue({ name = "Test machine", slots = 1, busy = 0 } = {}) {
-  let seq = 0;
-  const beat = () => server.hear({ type: "serving", pool: "pool-1", name, slots, busy, from: "test-pool", seq: seq++ });
-  beat();
-  clearInterval(beating);
-  beating = setInterval(beat, 50);
-}
-afterEach(() => clearInterval(beating));
+let repo, ctx, boxUrl, plateUrl, server, folder, tasks;
+/** A machine heard serving the queue. */
+const serveQueue = ({ name = "Test machine", slots = 1, busy = 0 } = {}) => (tasks.pools = [{ name, slots, busy }]);
 beforeEach(() => {
-  setPackageUrl(PACKAGE);
+  tasks = standIn();
+  getRegistry("patchwork:library").register({ type: "patchwork:library", id: "tasks-next", load: async () => tasks });
   repo = new FakeRepo();
   ctx = { repo, session: { url: SESSION, doc: () => ({}) } };
   // 100 × 20 × 10 mm, from the origin
@@ -345,13 +340,10 @@ describe("fea_run", () => {
     expect(run.part.title).toBe("box");
     expect(s.handle.doc().runs).toEqual([runUrl]);
     expect(s.handle.doc().selected).toBe(runUrl);
-    // asked of the study's queue as a task keyed by the run, naming this package's run code
-    expect(Object.keys(server.doc().jobs)).toEqual([runUrl]);
-    const entry = server.doc().jobs[runUrl];
-    expect(entry.package).toBe(PACKAGE);
-    expect(run.task).toBe(entry.taskUrl);
-    const task = (await repo.find(entry.taskUrl)).doc();
-    expect(task).toEqual({ importUrl: `/${encodeURIComponent(PACKAGE)}/${RUN_CODE}`, input: { run: runUrl }, key: runUrl, runs: [] });
+    // asked of the study's queue as a task keyed by the run, naming the run code beside study-model.js
+    expect(tasks.asked).toEqual([{ queueUrl: server.url, importUrl: `/${encodeURIComponent(tasks.packageUrl)}/${RUN_CODE}`, input: { run: runUrl }, key: runUrl }]);
+    expect(tasks.from).toEqual([expect.stringMatching(/\/src\/study-model\.js$/)]);
+    expect(run.task).toBe(server.doc().jobs[runUrl].taskUrl);
     expect(s.handle.messages.at(-1)).toBe(`agent ${SESSION}: run the study “box · FEA”`);
     expect((await repo.find(runUrl)).messages).toEqual([`agent ${SESSION}: run the study “box · FEA”`]);
     expect(STATUS_PATH).toEqual(["status"]);
@@ -368,12 +360,12 @@ describe("fea_run", () => {
   });
   it("refuses while nobody is heard serving the server's queue, and asks for nothing", async () => {
     const s = await readyStudy();
-    clearInterval(beating);
+    tasks.pools = [];
     const before = snapshot(s.handle, server);
     await expect(runTool.execute({ study: s.url }, ctx)).rejects.toThrow("Can't run: the server “Test FEA” isn't running: start it (daemon/start.sh on its machine), or choose another. Nothing was asked for");
     expect(snapshot(s.handle, server)).toBe(before);
     expect(text(await studyTool.execute({ study: s.url }, ctx))).toContain("Not ready to run: The server isn't running: nobody is heard serving its queue.");
-  }, 15_000);
+  });
   it("says how many runs are ahead, from the queue and what its machine says it is busy with", async () => {
     const s = await readyStudy();
     await runTool.execute({ study: s.url }, ctx);
@@ -385,7 +377,7 @@ describe("fea_run", () => {
   });
   it("can't name the run's code outside its package without being told, and asks for nothing", async () => {
     const s = await readyStudy();
-    setPackageUrl(null);
+    tasks.packageUrl = null;
     const before = snapshot(s.handle, server);
     await expect(runTool.execute({ study: s.url }, ctx)).rejects.toThrow(/Can't run: This copy of the tool wasn't loaded from its package/);
     expect(snapshot(s.handle, server)).toBe(before);
@@ -474,9 +466,9 @@ describe("fea_stop", () => {
     const task = await repo.find(run.doc().task);
     const runDocBefore = JSON.stringify(run.doc());
     const t = await stopTool.execute({ runs: [runUrl, done.url] }, ctx);
-    // the stop is a record in the task, and the queue no longer lists it; the run doc isn't written
-    expect(task.doc().runs).toEqual([{ id: expect.any(String), start: expect.any(Number), end: expect.any(Number), status: "cancelled" }]);
-    expect(taskState(task.doc(), allHeard)).toBe("cancelled");
+    // the stop is the task's, and the queue no longer lists it; the run doc isn't written
+    expect(tasks.cancelled).toEqual([runUrl]);
+    expect(task.doc().state).toBe("cancelled");
     expect(server.doc().jobs).toEqual({});
     expect(JSON.stringify(run.doc())).toBe(runDocBefore);
     expect(t).toContain(`${runUrl}: cancelled. If it hadn't started it never will, and its status field stays "queued" (fea_results shows it cancelled)`);
@@ -495,7 +487,7 @@ describe("fea_stop", () => {
     const s = await readyStudy();
     const runUrl = (await runTool.execute({ study: s.url }, ctx)).made[0].url;
     const task = await repo.find((await repo.find(runUrl)).doc().task);
-    task.change((d) => d.runs.push({ id: "r1", pool: "p", start: 1, end: 2, status: "failed", logs: [{ timestampMillis: 2, message: "its code would not load" }] }));
+    task.change((d) => Object.assign(d, { state: "failed", error: "its code would not load" }));
     expect(await resultsTool.execute({ runs: [runUrl] }, ctx)).toContain("   Failed: its code would not load");
     expect(await stopTool.execute({ runs: [runUrl] }, ctx)).toBe(`${runUrl}: already failed; nothing to cancel.`);
   });
@@ -504,7 +496,7 @@ describe("fea_stop", () => {
     const runUrl = (await runTool.execute({ study: s.url }, ctx)).made[0].url;
     const run = await repo.find(runUrl);
     await expect(stopTool.execute({ runs: [runUrl, boxUrl] }, ctx)).rejects.toThrow(/is a file document, not an FEA run\. Nothing was cancelled\./);
-    expect((await repo.find(run.doc().task)).doc().runs).toEqual([]);
+    expect(tasks.cancelled).toEqual([]);
     expect(Object.keys(server.doc().jobs)).toEqual([runUrl]);
     await expect(stopTool.execute({ runs: [] }, ctx)).rejects.toThrow("`runs` is a list of run URLs to cancel.");
   });
@@ -519,5 +511,17 @@ describe("change messages", () => {
     await runTool.execute({ study: s.url }, ctx);
     expect(s.handle.messages.length).toBeGreaterThan(3);
     for (const m of s.handle.messages) expect(m).toMatch(new RegExp(`^agent ${SESSION}: `));
+  });
+});
+
+// ---------------------------------------------------------------- without the Tasks package
+
+describe("where the Tasks package isn't installed", () => {
+  it("every tool refuses, saying so, and writes nothing", async () => {
+    getRegistry("patchwork:library").unregister("tasks-next");
+    const before = snapshot(server, folder);
+    for (const [tool, input] of [[studyTool, { part: boxUrl }], [setupTool, { study: server.url }], [runTool, { study: server.url }], [resultsTool, { runs: [server.url] }], [stopTool, { runs: [server.url] }]])
+      await expect(tool.execute(input, ctx)).rejects.toThrow("This needs the Tasks package, which is not installed here.");
+    expect(snapshot(server, folder)).toBe(before);
   });
 });

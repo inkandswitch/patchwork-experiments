@@ -28,7 +28,7 @@ if (!existsSync(join(PKG, "dist/index.js"))) throw new Error("build first: pnpm 
 const SHOTS = resolve(arg("--shots") ?? join(process.env.TMPDIR || tmpdir(), "fea-shots"));
 mkdirSync(SHOTS, { recursive: true });
 
-const b = await browser({ root: WITH, port: Number(process.env.PROBE_PORT) || 4798, cdp: Number(process.env.PROBE_CDP) || 9798, page: "/scene/probes/editor-probe.html?plugins=/fea/dist/index.js", width: 1440, height: 760, show: process.argv.includes("--show"), timeout: 300_000, mounts: { "/fea/": PKG } });
+const b = await browser({ root: WITH, port: Number(process.env.PROBE_PORT) || 4798, cdp: Number(process.env.PROBE_CDP) || 9798, page: "/scene/probes/editor-probe.html?plugins=/fea/dist/index.js,/tasks/dist/index.js", width: 1440, height: 760, show: process.argv.includes("--show"), timeout: 300_000, mounts: { "/fea/": PKG } });
 const list = checklist();
 const { check } = list;
 const report = { checks: list.checks, details: list.details, shots: [] };

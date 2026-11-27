@@ -15,6 +15,10 @@ function makeRegistry() {
       if (!p.module) p.module = await p.load();
       return p;
     },
+    async loadWhenReady(id) {
+      while (!plugins.has(id)) await new Promise((resolve) => listeners.add(function once() { listeners.delete(once); resolve(); }));
+      return this.load(id);
+    },
     on(ev, fn) { listeners.add(fn); return () => listeners.delete(fn); },
   };
 }

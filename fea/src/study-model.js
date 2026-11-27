@@ -5,6 +5,8 @@
 //
 // Each takes a context `ctx`:
 //   { repo, handle,            the study's handle
+//     tasks,                   the Tasks package's client (the library tasks-next):
+//                              finds documents, asks for runs and cancels them
 //     now?: () => number,      (Date.now)
 //     by?: string|null,        who is acting, for the run and change messages
 //     getRegistry?,            the host's plugin registry (acquirePart finds it otherwise)
@@ -23,8 +25,7 @@ import { isQuantity } from "./units.js";
 import { acquirePart, pathLabel } from "./part/acquire.js";
 import { readPart } from "./part/faces.js";
 import { encodePart, decodePart, carryFaces, carrySetup, PART_TYPE } from "./part/kept.js";
-import { newRun, isTerminal, STUDY_TYPE, RUN_TYPE, RUN_CODE } from "./protocol.js";
-import { askRun, cancelRun, hearServing, isQueue, lookAtTask, codeUrl, shownRun, findWhenThere } from "./task-runs.js";
+import { newRun, STUDY_TYPE, RUN_TYPE, RUN_CODE } from "./protocol.js";
 import { externalize, internalize } from "./segments.js";
 import { renderKey, isRenderDoc } from "./render-read.js";
 
@@ -62,15 +63,15 @@ function writeSetup(ctx, fn) {
 const partCache = new Map(); // kept url → Promise<part>
 
 /** The study's kept part, decoded (cached by its doc, which never changes), or null if it has none. */
-export async function keptPart(repo, study) {
+export async function keptPart({ repo, tasks }, study) {
   const url = study?.part?.kept;
   if (!url) return null;
   if (!partCache.has(url)) {
     const p = (async () => {
-      const h = await findWhenThere(repo, url, { tries: 5 });
+      const h = await tasks.findWhenThere(repo, url, { tries: 5 });
       const doc = h.doc();
       if (typeOf(doc) !== PART_TYPE) throw new Error("the study's kept part isn't a part");
-      return decodePart(await internalize(repo, doc));
+      return decodePart(await internalize(repo, doc, { find: tasks.findWhenThere }));
     })();
     partCache.set(url, p);
     p.catch(() => partCache.delete(url));
@@ -98,7 +99,7 @@ export async function linkPart(ctx, url = null) {
   if (!part.tris.length) return refuse(`“${got.title}” has no surface to analyse`);
   let before = null;
   try {
-    before = await keptPart(ctx.repo, study);
+    before = await keptPart(ctx, study);
   } catch {
     before = null; // the old kept part is unreachable: nothing to carry from
   }
@@ -384,11 +385,11 @@ export async function setServer(ctx, url) {
   }
   let doc;
   try {
-    doc = (await findWhenThere(ctx.repo, url, { tries: 3 })).doc();
+    doc = (await ctx.tasks.findWhenThere(ctx.repo, url, { tries: 3 })).doc();
   } catch (err) {
     return refuse(`couldn't load that server (${err?.message ?? err})`);
   }
-  if (!isQueue(doc)) return refuse("that isn't an FEA server: paste the queue link the FEA host printed when it started (daemon/start.sh in this package)");
+  if (!ctx.tasks.isQueue(doc)) return refuse("that isn't an FEA server: paste the queue link the FEA host printed when it started (daemon/start.sh in this package)");
   write(ctx, (d) => {
     d.server = url;
   });
@@ -400,7 +401,9 @@ export async function setServer(ctx, url) {
  * and ask the server (a task queue) for it, as a task keyed by the run doc's
  * url. Refused while no machine is heard serving the queue: a run asked then
  * would sit in the queue with nothing to say why.
- * `ctx.hear` (tests) stands in for listening to the queue (hearServing).
+ * `ctx.hear` stands in for listening to the queue (hearServing): the panel
+ * hands it the machines it already hears. The task names the run's code
+ * beside this module, or `ctx.code` (a probe not loaded from a package).
  * @returns {Promise<{ ok: true, url: string, pools: object[] } | { ok: false, error: string, blocking?: string[] }>}
  */
 export async function runStudy(ctx) {
@@ -408,7 +411,7 @@ export async function runStudy(ctx) {
   const setup = normalizeSetup(study.setup);
   let part;
   try {
-    part = await keptPart(ctx.repo, study);
+    part = await keptPart(ctx, study);
   } catch (err) {
     return refuse(`the study's part couldn't be loaded (${err?.message ?? err})`);
   }
@@ -417,17 +420,14 @@ export async function runStudy(ctx) {
   if (!study.server) return refuse("choose a server to run on: paste the queue link an FEA host printed when it started");
   let server;
   try {
-    server = await findWhenThere(ctx.repo, study.server, { tries: 3 });
+    server = await ctx.tasks.findWhenThere(ctx.repo, study.server, { tries: 3 });
   } catch (err) {
     return refuse(`couldn't reach the server's document (${err?.message ?? err})`);
   }
-  if (!isQueue(server.doc())) return refuse("the study's server isn't an FEA server");
-  try {
-    codeUrl(RUN_CODE);
-  } catch (err) {
-    return refuse(String(err.message).replace(/\.$/, ""));
-  }
-  const pools = await (ctx.hear ?? hearServing)(ctx.repo, study.server);
+  if (!ctx.tasks.isQueue(server.doc())) return refuse("the study's server isn't an FEA server");
+  const code = ctx.code ?? ctx.tasks.inSamePackage(import.meta.url, RUN_CODE);
+  if (!code) return refuse("This copy of the tool wasn't loaded from its package, so it can't name the code that does its runs; open it from Patchwork");
+  const pools = await (ctx.hear ?? ctx.tasks.hearServing)(ctx.repo, study.server);
   if (!pools.length) return refuse(`the server “${server.doc().title ?? "FEA server"}” isn't running: start it (daemon/start.sh on its machine), or choose another`);
   const now = nowOf(ctx);
   // the kept part, as it is kept: its bytes inline or the same segment refs (they never change)
@@ -440,11 +440,13 @@ export async function runStudy(ctx) {
     d.runs.push(run.url);
     d.selected = run.url;
   });
-  await askRun(ctx.repo, study.server, run, RUN_CODE, ctx.message ? { message: ctx.message } : undefined);
+  // a task keyed by the run doc's url (asking twice is asking once), whose url the run doc keeps
+  const { taskUrl } = await ctx.tasks.ask(ctx.repo, study.server, { importUrl: code, input: { run: run.url }, key: run.url });
+  run.change((d) => void (d.task = taskUrl), ctx.message ? { message: ctx.message } : undefined);
   return { ok: true, url: run.url, pools };
 }
 
-/** Cancel a run that hasn't finished: a stop recorded in its task (src/task-runs.js). */
+/** Cancel a run that hasn't finished: a stop recorded in its task (the Tasks package's cancelRun). */
 export async function stopRun(ctx, runUrl) {
   let h;
   try {
@@ -453,9 +455,9 @@ export async function stopRun(ctx, runUrl) {
     return refuse(`couldn't load that run (${err?.message ?? err})`);
   }
   if (typeOf(h.doc()) !== RUN_TYPE) return refuse("that isn't an FEA run");
-  const { status } = shownRun(h.doc(), await lookAtTask(ctx.repo, h.doc()));
-  if (isTerminal(status)) return refuse(`that run has already ${status === "done" ? "finished" : status}`);
-  if (!(await cancelRun(ctx.repo, h.doc(), runUrl))) return refuse("its queue no longer lists that run, so there's nothing to cancel");
+  const { status } = ctx.tasks.shownRun(h.doc(), await ctx.tasks.lookAtTask(ctx.repo, h.doc()));
+  if (ctx.tasks.isRunEnded(status)) return refuse(`that run has already ${status === "done" ? "finished" : status}`);
+  if (!(await ctx.tasks.cancelRun(ctx.repo, h.doc(), runUrl))) return refuse("its queue no longer lists that run, so there's nothing to cancel");
   return { ok: true };
 }
 

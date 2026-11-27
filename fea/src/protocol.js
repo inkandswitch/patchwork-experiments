@@ -7,7 +7,7 @@
 // Three kinds of document of this package's own:
 //
 //   fea-study    the person's: the part link, the setup, the server (a task
-//                queue: see src/task-runs.js), the runs it has made. Only
+//                queue of the Tasks package's), the runs it has made. Only
 //                people write it.
 //   fea-part     the part as the study keeps it (src/part/kept.js). Written
 //                whole when the part is read; never changed after.
@@ -24,26 +24,20 @@
 //                                            recipe, notes, error, startedAt,
 //                                            finishedAt
 //
-// What this file doesn't say is the kit's (src/task-runs.js): asking for a
+// What this file doesn't say is the Tasks package's client's: asking for a
 // run, cancelling it (a stop appended to its task, never a write here), the
-// status a person sees (`shownRun`, read from the run doc and its task), and
-// what a stopped or interrupted run writes (`markStopped`, `markInterrupted`).
+// status a person sees (`shownRun`, read from the run doc and its task), which
+// statuses end a run (`isRunEnded`), and what a stopped or interrupted run
+// writes (`markStopped`, `markInterrupted`).
 
 import { ANALYSES } from "./setup.js";
-import { RUN_ENDED, isRunEnded } from "./task-runs.js";
 
 export const STUDY_TYPE = "fea-study";
 export const RUN_TYPE = "fea-run";
 export const LAYER_TYPE = "fea-layer";
 export const PROTOCOL_VERSION = 1;
 
-/** Run statuses: queued, this package's working ones, and the endings the kit reads (src/task-runs.js RUN_ENDED). */
-export const STATUSES = Object.freeze(["queued", "meshing", "solving", "post", ...RUN_ENDED]);
-/** The statuses that say a run has ended, and whether a status is one, by this package's names for the kit's. */
-export const TERMINAL = RUN_ENDED;
-export const isTerminal = isRunEnded;
-
-/** The run's code: what a run's task names, within this package (src/task-runs.js codeUrl). */
+/** The run's code: what a run's task names, within this package (study-model.js runStudy names it beside itself). */
 export const RUN_CODE = "daemon/run-task.mjs";
 
 /** The stages a run goes through, in order, and the status the run has during each. */

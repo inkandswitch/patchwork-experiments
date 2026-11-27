@@ -9,13 +9,14 @@
 // dependencies are keyed by heads. A run is fingerprinted by its status and
 // its results' link, which change once, when it finishes; a study by which
 // run it shows, its kept part and what its marks are drawn from. The kept
-// part and the results never change once written.
+// part and the results never change once written. Documents are found by the
+// Tasks package's findWhenThere: a build waits for that package.
 
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { STUDY_TYPE, RUN_TYPE, decodeLayer } from "./protocol.js";
 import { decodePart, PART_TYPE } from "./part/kept.js";
 import { buildStudyGLB } from "./scene-build.js";
 import { normalizeSetup } from "./setup.js";
-import { findWhenThere } from "./task-runs.js";
 import { internalize } from "./segments.js";
 
 const typeOf = (doc) => doc?.["@patchwork"]?.type;
@@ -51,22 +52,23 @@ export default {
     return null;
   },
   async build({ doc, params, repo }) {
+    const find = (await getRegistry("patchwork:library").loadWhenReady("tasks-next")).module.findWhenThere;
     const run = typeOf(doc) === RUN_TYPE ? doc : await pickRun(doc, repo);
     const notes = [];
     if (run?.status === "done" && run.layers?.skin) {
       // results that aren't here yet are this peer's problem: throw, keep the last good render
-      const layer = decodeLayer(await internalize(repo, (await findWhenThere(repo, run.layers.skin, { tries: 4 })).doc()));
+      const layer = decodeLayer(await internalize(repo, (await find(repo, run.layers.skin, { tries: 4 })).doc(), { find }));
       if (!layer) throw new Error("the run's results haven't arrived");
-      const part = decodePart(await internalize(repo, run.part));
+      const part = decodePart(await internalize(repo, run.part, { find }));
       notes.push(run.title);
       return buildStudyGLB({ layer, part, setup: normalizeSetup(run.setup), params, notes });
     }
     // no results: the part as it is kept (a run's own, or the study's)
     let kept = null;
     if (typeOf(doc) === RUN_TYPE) kept = doc.part;
-    else if (doc.part?.kept) kept = (await findWhenThere(repo, doc.part.kept, { tries: 4 })).doc();
+    else if (doc.part?.kept) kept = (await find(repo, doc.part.kept, { tries: 4 })).doc();
     if (!kept?.stl) return buildStudyGLB({ params, notes: ["no part linked yet"] });
-    const part = decodePart(await internalize(repo, kept));
+    const part = decodePart(await internalize(repo, kept, { find }));
     notes.push(typeOf(doc) === RUN_TYPE ? `${doc.title}: ${doc.status}, no results yet` : "no results yet");
     return buildStudyGLB({ part, setup: normalizeSetup(doc.setup), params, notes });
   },

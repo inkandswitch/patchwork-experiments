@@ -266,10 +266,13 @@ never overlaps:
 What becomes of a run's task (waiting, running, stopped, failed before its
 code wrote anything) is read from the task, and the status a person sees is
 `shownRun(run doc, task)`; nobody writes the run doc to say it.
-`src/task-runs.js` asks, cancels and reads the queue through `task-client.js`
-and `task-rules.js`, and makes the run's task code around the runner; all
-three are verbatim copies of the tasks package's kit files (`node
-scripts/check-kit.mjs` at the experiments root checks them).
+The Tasks package's client asks, cancels and reads the queue, and makes the
+run's task code around the runner. This package carries no copy of it: the
+study tool, the run tool, the agent's tools and the scene source ask the
+plugin registry for the library `tasks-next`, and so does a run's code, in a
+pool, which always has it. Where the Tasks package isn't installed, the study
+and run tools say so and carry on once it arrives; the agent's tools refuse,
+saying so.
 
 A run doc is made when you press Run, with the setup and the kept part
 frozen into it, so every run records exactly what was analysed. It also
@@ -341,11 +344,12 @@ how faces carry over; gmsh's input and output; the mesh (its skin closed,
 outward and on the right faces, for four- and ten-node tetrahedra); the
 loads (totals exact, nothing on a ten-node triangle's corners); the solver's
 input; CalculiX's output, from real files; the figures and their notes; the
-setup; the protocol, with the status a person sees for every run status
-against every task state; the run's task code (the guard, each stop reason,
-a late run doc, missing tools) and the runner told to stop, with its
-processes gone; asking and cancelling through the kit; the drawing and the
-scene's GLB; the agent's tools over a fake repo.
+setup; the protocol; the run's task code (its runner given this machine,
+the echo, missing tools) and the runner told to stop, with its processes
+gone; the drawing and the scene's GLB; the agent's tools over a
+fake repo. Where they need the Tasks package's client they have a stand-in
+(`src/test/tasks-stand-in.js`); the probes use its real build, the one
+`TASKS_HOST` names or `../tasks`.
 
 Probes (need gmsh and CalculiX, or Chrome):
 
@@ -361,8 +365,9 @@ Probes (need gmsh and CalculiX, or Chrome):
   stopped mid-solve and restarted without a second solve, and who is heard
   serving the queue.
 - `pnpm build && node probes/ui-run.mjs --done run.json --modal modal.json`:
-  the built tool in headless Chrome on a fake repo: link a part, click
-  faces on it, run, a run mid-solve, results on the part, a modal run's
+  the built tool in headless Chrome on a fake repo, saying it needs the Tasks
+  package until that package's build arrives: link a part, click faces on
+  it, run, a run mid-solve, results on the part, a modal run's
   modes, a changed model, a part that isn't closed; light, dark and phone
   width.
 - `pnpm build && node probes/scene-run.mjs --with <a checkout holding a built scene/>`:

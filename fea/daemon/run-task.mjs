@@ -1,13 +1,14 @@
 // One FEA run, as a task's code. A study asks its task queue for a run
-// (src/task-runs.js askRun); a tasks host on a machine with gmsh and
+// (src/study-model.js runStudy); a tasks host on a machine with gmsh and
 // CalculiX serves the queue (daemon/start.sh) and calls this module's default
 // export with the task's input, `{ run: <the run doc's url> }`, and its context.
 //
-// The kit's makeRunTask (src/task-runs.js) does what any run asked as a task
-// does: finds the run doc, never starts a run twice unasked, echoes progress
-// to the task's view, lets go of the machine when told to stop, and returns
-// within the host's grace whatever the runner is waiting on. What is this
-// package's: the run doc's type, gmsh and CalculiX on this machine, the
+// The Tasks package's makeRunTask does what any run asked as a task does:
+// finds the run doc, never starts a run twice unasked, echoes progress to the
+// task's view, lets go of the machine when told to stop, and returns within
+// the host's grace whatever the runner is waiting on. It comes from the
+// library tasks-next in the pool's own registry, which every pool has. What is
+// this package's: the run doc's type, gmsh and CalculiX on this machine, the
 // runner (runner.mjs), and the echo (`progressOf`: the status and the stage).
 //
 // The machine, from the environment the host was started in (start.sh sets it):
@@ -30,6 +31,7 @@
 // (a Mac that sleeps mid-run stops the solver and drops the sync); and the
 // second peer, made only if the server doesn't acknowledge a doc.
 
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir, hostname, platform, arch } from "node:os";
@@ -38,7 +40,6 @@ import { fileURLToPath } from "node:url";
 import { findGmsh, findCcx, gmshVersion, ccxVersion, defaultCores, KILL_AFTER_MS } from "./tools.mjs";
 import { runJob as realRunJob } from "./runner.mjs";
 import { freshPeer } from "../src/segments.js";
-import { makeRunTask } from "../src/task-runs.js";
 import { RUN_TYPE } from "../src/protocol.js";
 
 const DEFAULT_SYNC = "wss://subduction.sync.inkandswitch.com";
@@ -128,12 +129,12 @@ function stayAwake() {
 }
 
 /** The second peer: a repo of its own on the sync server, nothing stored, made on first use. */
-function checkerPeer(sync) {
+function checkerPeer(sync, find) {
   return freshPeer(async () => {
     const { Repo, initSubduction } = await import("@automerge/automerge-repo");
     await initSubduction();
     return new Repo({ network: [], subductionWebsocketEndpoints: [sync] });
-  });
+  }, { find });
 }
 
 /** What a generic task view is told: the run doc's status and the stage it is on. */
@@ -143,27 +144,27 @@ export function progressOf(run) {
 }
 
 /**
- * The runner as the kit's makeRunTask calls it: runner.mjs with this
- * machine's gmsh and CalculiX, cores, mesh cap and directories, and a second
- * peer of its own that is closed when the run is over.
- * @param {{ runJob?: typeof realRunJob, peer?: (sync: string) => { verify: Function, close: () => Promise<void> } }} [o]  tests hand it fakes
+ * The runner as makeRunTask calls it: runner.mjs with the Tasks package's
+ * client, this machine's gmsh and CalculiX, cores, mesh cap and directories,
+ * and a second peer of its own that is closed when the run is over.
+ * @param {{ tasks: object, runJob?: typeof realRunJob, peer?: (sync: string, find: Function) => { verify: Function, close: () => Promise<void> } }} o  tests hand it fakes
  */
-export function solve({ runJob = realRunJob, peer = checkerPeer } = {}) {
+export function solve({ tasks, runJob = realRunJob, peer = checkerPeer }) {
   return async ({ repo, handle, facts, signal, say }) => {
-    const checker = peer(facts.sync);
+    const checker = peer(facts.sync, tasks.findWhenThere);
     try {
-      return await runJob({ repo, handle, tools: facts.tools, workDir: join(facts.state, "runs"), cores: facts.cores, maxNodes: facts.maxNodes, daemon: facts.info, say, signal, verify: checker.verify });
+      return await runJob({ repo, handle, tasks, tools: facts.tools, workDir: join(facts.state, "runs"), cores: facts.cores, maxNodes: facts.maxNodes, daemon: facts.info, say, signal, verify: checker.verify });
     } finally {
       await checker.close().catch(() => {});
     }
   };
 }
 
-/**
- * What this package's task code is made of. The default export is made from
- * it, and the tests make the same with a fake machine, runner and sleep in
- * their places, so what they check is what runs.
- */
-export const RUN_TASK = Object.freeze({ type: RUN_TYPE, what: "an FEA run", machine: () => thisMachine(), runJob: solve(), progressOf, awake: stayAwake, stopWait: STOP_WAIT_MS });
+/** What this package's task code is made of, beside its runner (`solve`). */
+export const RUN_TASK = Object.freeze({ type: RUN_TYPE, what: "an FEA run", machine: () => thisMachine(), progressOf, awake: stayAwake, stopWait: STOP_WAIT_MS });
 
-export default makeRunTask(RUN_TASK);
+/** The task's code: makeRunTask from this pool's registry, around this package's runner. */
+export default async function runTask(input, ctx) {
+  const { module: tasks } = await getRegistry("patchwork:library").loadWhenReady("tasks-next");
+  return tasks.makeRunTask({ ...RUN_TASK, runJob: solve({ tasks }) })(input, ctx);
+}

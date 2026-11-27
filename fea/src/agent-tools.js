@@ -16,10 +16,11 @@
 // Every input is something another tool produces: automerge: URLs, numbers
 // with their units, face numbers and ids that fea_study's report lists.
 // Every write is a change whose message names the agent session and what it
-// did.
+// did. The Tasks package's client (the library tasks-next) is had when a tool
+// runs, and refused, not waited for, where that package isn't installed.
 
-import { STUDY_TYPE, RUN_TYPE, isTerminal } from "./protocol.js";
-import { isQueue, hearServing, queueCounts, servedBy, lookAtTask, shownRun } from "./task-runs.js";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { STUDY_TYPE, RUN_TYPE } from "./protocol.js";
 import { normalizeSetup, setupProblems, readiness, meshEstimate, listOf, describeLoad, readQuantity, MESH_PRESETS } from "./setup.js";
 import { MATERIALS } from "./materials.js";
 import { unitsOf, pretty, prettyUnit, format, num, toSI, DIMENSIONS } from "./units.js";
@@ -71,11 +72,19 @@ async function findTyped(ctx, url, type, label, hint) {
   return h;
 }
 
+/** The tool's context with the Tasks package's client beside it, as `tasks`. */
+async function withTasks(ctx) {
+  const library = await getRegistry("patchwork:library").load("tasks-next");
+  if (!library) throw new Error("This needs the Tasks package, which is not installed here.");
+  return { ...ctx, tasks: library.module };
+}
+
 const findStudy = (ctx, input) => findTyped(ctx, urlOf(input, "study", "the automerge: URL of an FEA study (fea_study makes one)"), STUDY_TYPE, "an FEA study", "fea_study makes one.");
 
 /** The context study-model's actions take, for this study, naming the agent's session. */
 const modelCtx = (ctx, handle, why) => ({
   repo: ctx.repo,
+  tasks: ctx.tasks,
   handle,
   by: BY,
   message: message(ctx, why),
@@ -141,8 +150,8 @@ async function openServer(ctx, url) {
   try {
     const handle = await ctx.repo.find(url);
     const doc = handle.doc();
-    if (!isQueue(doc)) return { url, handle, doc, error: "isn't a task queue (the FEA host prints one when it starts)", pools: [] };
-    return { url, handle, doc, error: null, pools: await hearServing(ctx.repo, url) };
+    if (!ctx.tasks.isQueue(doc)) return { url, handle, doc, error: "isn't a task queue (the FEA host prints one when it starts)", pools: [] };
+    return { url, handle, doc, error: null, pools: await ctx.tasks.hearServing(ctx.repo, url) };
   } catch (err) {
     return { url, handle: null, doc: null, error: `couldn't be loaded (${err?.message ?? err})`, pools: [] };
   }
@@ -156,14 +165,14 @@ async function loadStudy(ctx, handle) {
   let partError = null;
   if (doc.part?.kept) {
     try {
-      part = await model.keptPart(ctx.repo, doc);
+      part = await model.keptPart(ctx, doc);
     } catch (err) {
       partError = String(err?.message ?? err);
     }
   }
   const changed = doc.part?.url ? await model.partChanged(ctx.repo, doc) : null;
   const server = await openServer(ctx, doc.server ?? null);
-  return { handle, doc, setup, part, partError, changed, server };
+  return { handle, doc, setup, part, partError, changed, server, tasks: ctx.tasks };
 }
 
 /** Lengths for a part in the unit its size reads best in (the study tool's choice). */
@@ -263,11 +272,11 @@ function meshText(c) {
   return `${head}; about ${est.nodes.toLocaleString("en")} nodes (${est.elements.toLocaleString("en")} elements) at ${pretty(est.size, "length")}.`;
 }
 
-function serverText(sv) {
+function serverText(sv, tasks) {
   if (!sv.url) return "Server: none. Choose one with fea_study { study, server: <the queue link the FEA host printed> }.";
   if (sv.error) return `Server: ${sv.url}: ${sv.error}.`;
-  const by = servedBy(sv.pools);
-  const q = queueCounts(sv.doc, sv.pools);
+  const by = tasks.servedBy(sv.pools);
+  const q = tasks.queueCounts(sv.doc, sv.pools);
   const state = by ? `served by ${by}` : "not running: nobody is heard serving its queue; start it (daemon/start.sh) on its machine";
   return `Server: “${sv.doc.title ?? "FEA server"}” (${sv.url}): ${state}; ${q.running ? `running ${q.running}` : "nothing running"}${q.waiting ? `, ${q.waiting} waiting` : ""}.`;
 }
@@ -295,7 +304,7 @@ function report(c, { head = null, listFaces = true, faces, facing } = {}) {
     analysisText(c.setup),
     itemsText(c),
     meshText(c),
-    serverText(c.server),
+    serverText(c.server, c.tasks),
     problems.length ? `The setup as stored: ${problems.join("; ")}. It reads as shown above.` : null,
     `Runs: ${runs.length}${runs.length ? `; shown: ${d.selected ?? "none"}. fea_results { study } tabulates them` : ""}.`,
     ready.blocking.length ? `Not ready to run: ${ready.blocking.map(capital).join(". ")}.` : "Ready: fea_run { study } runs it.",
@@ -312,6 +321,7 @@ const FACINGS = ["+x", "-x", "+y", "-y", "+z", "-z", "curved"];
 
 export const studyTool = {
   async execute(input, ctx) {
+    ctx = await withTasks(ctx);
     const changes = [];
     // what can be checked is checked before anything is written
     if (input.faces !== undefined && !FACE_CHOICES.includes(input.faces)) throw new Error(`\`faces\` is "largest" or "all", not ${quote(input.faces)}.`);
@@ -339,7 +349,7 @@ export const studyTool = {
     }
     if (serverUrl) {
       // the same check setServer makes, on a copy: a refusal here writes nothing
-      const r = await model.setServer({ repo: ctx.repo, handle: scratchOf(handle ?? { url: null, doc: () => ({}) }, ["server"]) }, serverUrl);
+      const r = await model.setServer({ repo: ctx.repo, tasks: ctx.tasks, handle: scratchOf(handle ?? { url: null, doc: () => ({}) }, ["server"]) }, serverUrl);
       if (!r.ok) throw new Error(`\`server\` ${serverUrl}: ${r.error}.`);
     }
     if (handle && input.select_run !== undefined) {
@@ -570,6 +580,7 @@ const SETUP_INPUTS = ["study", "analysis", "modes", "material", "mesh", "remove_
 export const setupTool = {
   async execute(input, ctx) {
     onlyKeys(input, SETUP_INPUTS, "fea_setup");
+    ctx = await withTasks(ctx);
     const handle = await findStudy(ctx, input.study);
     const changes = setupChanges(input);
     let c = await loadStudy(ctx, handle);
@@ -600,16 +611,17 @@ export const setupTool = {
 
 export const runTool = {
   async execute(input, ctx) {
+    ctx = await withTasks(ctx);
     const handle = await findStudy(ctx, input.study);
     const c = await loadStudy(ctx, handle);
     const r = await model.runStudy(modelCtx(ctx, handle, `run the study “${handle.doc().title ?? "FEA study"}”`));
     if (!r.ok) throw new Error(`Can't run: ${r.error}. Nothing was asked for (fea_study { study } reports the study).`);
     const run = (await ctx.repo.find(r.url)).doc();
     const sv = c.server.handle?.doc() ?? c.server.doc;
-    const ahead = queueCounts(sv, r.pools).listed - 1;
+    const ahead = ctx.tasks.queueCounts(sv, r.pools).listed - 1;
     const est = c.part?.solid ? meshEstimate(c.setup, c.part) : null;
     const lines = [
-      `Asked “${sv.title ?? "FEA server"}” (served by ${servedBy(r.pools)}) for a run: ${r.url} — “${run.title}”, ${statusLine(run)}${ahead > 0 ? `, ${ahead} ahead of it` : ""}.`,
+      `Asked “${sv.title ?? "FEA server"}” (served by ${ctx.tasks.servedBy(r.pools)}) for a run: ${r.url} — “${run.title}”, ${statusLine(run)}${ahead > 0 ? `, ${ahead} ahead of it` : ""}.`,
       est ? `Its mesh will be about ${est.nodes.toLocaleString("en")} nodes (${est.elements.toLocaleString("en")} ${c.setup.mesh.order === 2 ? "ten" : "four"}-node elements at ${pretty(est.size, "length")}).` : null,
       `A run's state is the small field ${JSON.stringify(STATUS_PATH)} of its document: queued → meshing → solving → post → done, or failed, or cancelled; only the machine running it writes it. A run cancelled before it started, or that its machine never finished, can stay "queued" there: fea_results says what became of it.`,
       `To wait, watch it: doc_watch { url: "${r.url}", path: ${JSON.stringify(STATUS_PATH)}, match: "${STATUS_END}" }. Then fea_results { runs: ["${r.url}"] }. fea_stop { runs: ["${r.url}"] } cancels it.`,
@@ -647,6 +659,7 @@ function runSection(i, { url, run }) {
 
 export const resultsTool = {
   async execute(input, ctx) {
+    ctx = await withTasks(ctx);
     let urls;
     let head = "";
     if (input.runs !== undefined) {
@@ -687,8 +700,8 @@ export const resultsTool = {
 
 /** A run as a person sees it: its doc, with the status its task gives it (shownRun), from one look at the task. */
 async function shownDoc(ctx, doc) {
-  if (isTerminal(doc.status)) return doc;
-  const s = shownRun(doc, await lookAtTask(ctx.repo, doc));
+  if (ctx.tasks.isRunEnded(doc.status)) return doc;
+  const s = ctx.tasks.shownRun(doc, await ctx.tasks.lookAtTask(ctx.repo, doc));
   return s.status === doc.status && s.error === (doc.error ?? null) ? doc : { ...doc, status: s.status, error: s.error };
 }
 
@@ -697,6 +710,7 @@ async function shownDoc(ctx, doc) {
 export const stopTool = {
   async execute(input, ctx) {
     if (!Array.isArray(input.runs) || !input.runs.length) throw new Error("`runs` is a list of run URLs to cancel.");
+    ctx = await withTasks(ctx);
     // every one checked before any is asked
     const handles = [];
     for (const raw of input.runs) {
@@ -706,11 +720,11 @@ export const stopTool = {
     const lines = [];
     for (const h of handles) {
       const st = (await shownDoc(ctx, h.doc())).status;
-      if (isTerminal(st)) {
+      if (ctx.tasks.isRunEnded(st)) {
         lines.push(`${h.url}: already ${st}; nothing to cancel.`);
         continue;
       }
-      const r = await model.stopRun({ repo: ctx.repo, handle: null, message: message(ctx, `cancel the run ${h.url}`) }, h.url);
+      const r = await model.stopRun({ repo: ctx.repo, tasks: ctx.tasks, handle: null, message: message(ctx, `cancel the run ${h.url}`) }, h.url);
       lines.push(
         !r.ok
           ? `${h.url}: ${r.error}.`

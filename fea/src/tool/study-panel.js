@@ -9,10 +9,12 @@
 // being picked for, which tab is open and how results are drawn are this
 // viewer's alone.
 //
-// The server is a task queue: who serves it is heard (task-client.js's
+// The server is a task queue: who serves it is heard (the Tasks package's
 // `served`), not read. A run that hasn't ended has its task followed too
 // (`watch`): what its run doc can't say (cancelled before it started, a
-// machine that stopped) is read from both (shownRun).
+// machine that stopped) is read from both (shownRun). The Tasks package's
+// client is the library tasks-next, had as the panel opens and kept until it
+// closes; where the package isn't installed the panel says so and waits.
 //
 //   stage = {
 //     view,                            a part view (../view/part-view.js)
@@ -29,10 +31,8 @@ import { describeFace } from "../part/faces.js";
 import { decodePart } from "../part/kept.js";
 import { placeOf, setupGlyphs } from "../draw/glyphs.js";
 import { resultGeometry, fieldChoices, modesOf } from "../draw/result.js";
-import { isTerminal, decodeLayer } from "../protocol.js";
-import { queueCounts, servedBy, aheadOf, shownRun, findWhenThere } from "../task-runs.js";
-import { served, watch } from "../task-client.js";
-import { BEAT_MS } from "../task-rules.js";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { decodeLayer } from "../protocol.js";
 import { internalize } from "../segments.js";
 import { figures, inputs, headline, statusLine, duration } from "../results.js";
 import { hasPatchworkDrop, parsePatchworkDrop, parseAutomergeUrl } from "../dnd.js";
@@ -69,7 +69,7 @@ async function whoAmI(repo) {
 export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
   const root = document.createElement("div");
   root.className = "panel";
-  root.innerHTML = `
+  const layout = `
     <input class="title" aria-label="Title" data-key="title">
     <div class="tabs" role="tablist">
       <button role="tab" data-act="tab" data-tab="setup">Setup</button>
@@ -118,8 +118,9 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
     by: null,
     disposed: false,
   };
+  let tasks = null; // the Tasks package's client
   whoAmI(repo).then((name) => (local.by = name));
-  const ctx = () => ({ repo, handle, by: local.by });
+  const ctx = () => ({ repo, handle, tasks, by: local.by });
 
   // ---------------------------------------------------------------- data
 
@@ -129,7 +130,7 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
   const runOf = (url) => {
     const raw = local.runs.get(url)?.doc() ?? null;
     if (!raw) return null;
-    const s = shownRun(raw, local.tasks.get(url) ?? null);
+    const s = tasks.shownRun(raw, local.tasks.get(url) ?? null);
     return s.status === raw.status && s.error === (raw.error ?? null) && !s.note ? raw : { ...raw, status: s.status, error: s.error, note: s.note };
   };
   const selectedRun = () => {
@@ -147,7 +148,7 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
     local.partError = null;
     local.changed = null;
     if (!kept) return render();
-    model.keptPart(repo, study()).then(
+    model.keptPart(ctx(), study()).then(
       (part) => {
         if (local.partFor !== kept || local.disposed) return;
         local.part = part;
@@ -178,12 +179,12 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
     local.serverSince = Date.now();
     if (!url) return;
     // who serves it: heard, not read (each machine says so every couple of seconds)
-    local.unhear = served(repo, url, (pools) => {
+    local.unhear = tasks.served(repo, url, (pools) => {
       if (local.serverFor !== url) return;
       local.pools = pools;
       render();
     });
-    findWhenThere(repo, url, { tries: 4 }).then(
+    tasks.findWhenThere(repo, url, { tries: 4 }).then(
       (h) => {
         if (local.serverFor !== url || local.disposed) return;
         local.server = h;
@@ -201,10 +202,10 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
 
   /** Follows a run's task while the run hasn't ended: what its run doc can't say is read from it. */
   function followTask(url, run) {
-    if (local.unwatch.has(url) || !run?.server || isTerminal(run.status)) return;
+    if (local.unwatch.has(url) || !run?.server || tasks.isRunEnded(run.status)) return;
     local.unwatch.set(
       url,
-      watch(
+      tasks.watch(
         repo,
         run.server,
         url,
@@ -230,7 +231,7 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
     for (const url of urls) {
       if (local.runs.has(url)) continue;
       local.runs.set(url, { doc: () => null, off() {}, on() {} });
-      findWhenThere(repo, url, { tries: 6 }).then(
+      tasks.findWhenThere(repo, url, { tries: 6 }).then(
         (h) => {
           if (local.disposed || !(study().runs ?? []).includes(url)) return;
           local.runs.set(url, h);
@@ -247,8 +248,9 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
   function resultsOf(url, run) {
     if (!local.results.has(url)) {
       const p = (async () => {
-        const part = decodePart(await internalize(repo, run.part));
-        const layer = decodeLayer(await internalize(repo, (await findWhenThere(repo, run.layers.skin, { tries: 5 })).doc()));
+        const find = tasks.findWhenThere;
+        const part = decodePart(await internalize(repo, run.part, { find }));
+        const layer = decodeLayer(await internalize(repo, (await find(repo, run.layers.skin, { tries: 5 })).doc(), { find }));
         if (!layer) throw new Error("the run's results haven't arrived");
         return { part, layer };
       })();
@@ -518,8 +520,8 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
       return `<h2>Server</h2><div class="hint">Where it runs: a machine with gmsh and CalculiX serving a queue (daemon/start.sh in this package starts it and prints the queue's link).</div>
         <div class="cluster"><input type="text" data-key="server-url" data-act="server-url" placeholder="Paste the queue's link">${remembered ? `<button data-act="server-last" title="The server this browser last used">Use the last one</button>` : ""}</div>`;
     if (!doc) return `<h2>Server</h2><div class="hint">loading…</div><div class="cluster"><button data-act="server-forget">Change</button></div>`;
-    const by = servedBy(local.pools);
-    const q = queueCounts(doc, local.pools);
+    const by = tasks.servedBy(local.pools);
+    const q = tasks.queueCounts(doc, local.pools);
     return `<h2>Server</h2>
       <div class="chip"><span class="dot" data-state="${by ? "online" : "idle"}"></span><a href="#" data-act="open-server">${esc(doc.title ?? "FEA server")}</a><span class="hint">${by ? `served by ${esc(by)}${q.running ? `, running ${q.running}` : ""}${q.waiting ? `, ${q.waiting} waiting` : ""}` : listening() ? "listening…" : "not running"}</span></div>
       ${by || listening() ? "" : `<div class="warn">Nobody is serving it. Start it (daemon/start.sh) on its machine.</div>`}
@@ -527,7 +529,7 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
   }
 
   /** Whether it's too soon to say nobody serves the queue: a machine says so every couple of seconds. */
-  const listening = () => !local.pools.length && Date.now() - local.serverSince < BEAT_MS + 500;
+  const listening = () => !local.pools.length && Date.now() - local.serverSince < tasks.BEAT_MS + 500;
 
   function runHtml() {
     const setup = setupOf();
@@ -552,7 +554,7 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
       .map((url) => {
         const run = runOf(url);
         const h = headline(run);
-        const going = run && !isTerminal(run.status);
+        const going = run && !tasks.isRunEnded(run.status);
         const found = run?.status !== "done" ? "" : run.summary?.kind === "modal" ? ` · first mode ${h.frequency}` : ` · ${h.stress} · moves ${h.displacement}${h.safety === "–" ? "" : ` · safety ${h.safety}`}`;
         return `<li data-act="select-run" data-url="${url}" data-state="${run?.status ?? "loading"}" aria-selected="${url === sel}" tabindex="0" role="option">
           <span class="dot" data-state="${run?.status ?? "idle"}"></span>
@@ -566,7 +568,7 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
   /** A run waiting in the queue: how many were asked for before it. */
   function waitingAhead(url, run) {
     if (run.status !== "queued" || run.note || !local.server || study().server !== run.server) return "";
-    const ahead = aheadOf(local.server.doc(), url);
+    const ahead = tasks.aheadOf(local.server.doc(), url);
     return ahead ? ` · ${ahead} ahead of it` : "";
   }
 
@@ -636,7 +638,7 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
   }
 
   function render() {
-    if (local.disposed) return;
+    if (local.disposed || !tasks) return;
     loadPart();
     loadServer();
     loadRuns();
@@ -647,7 +649,7 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
     for (const p of root.querySelectorAll(".tab-panel")) p.hidden = p.dataset.tab !== local.tab;
     const going = [...local.runs.keys()].filter((url) => {
       const run = runOf(url);
-      return run && !isTerminal(run.status);
+      return run && !tasks.isRunEnded(run.status);
     }).length;
     $(".tab-sum").textContent = going ? `${going} running` : (s.runs ?? []).length ? String(s.runs.length) : "";
     // an item that has gone can't be picked for
@@ -958,10 +960,18 @@ export function mountStudyPanel(host, { repo, handle, stage, element = host }) {
   root.addEventListener("dragover", onDragOver);
   root.addEventListener("drop", onDrop);
 
-  handle.on("change", render);
   // times ("done in 12 s", "online") move on their own
-  const clock = setInterval(render, 5000);
-  render();
+  let clock = null;
+  const libraries = getRegistry("patchwork:library");
+  if (!libraries.has("tasks-next")) root.textContent = "This needs the Tasks package, which is not installed here.";
+  libraries.loadWhenReady("tasks-next").then(({ module }) => {
+    if (local.disposed) return;
+    tasks = module;
+    root.innerHTML = layout;
+    handle.on("change", render);
+    clock = setInterval(render, 5000);
+    render();
+  });
 
   return {
     root,

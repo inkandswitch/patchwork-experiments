@@ -1,6 +1,6 @@
 import {
   newRun, runTitle, encodeLayer, decodeLayer, initStudy,
-  runIdOf, isTerminal, STAGES, STATUSES, RUN_TYPE, LAYER_TYPE, PROTOCOL_VERSION,
+  runIdOf, STAGES, RUN_TYPE, LAYER_TYPE, PROTOCOL_VERSION,
 } from "./protocol.js";
 import { defaultSetup, normalizeSetup } from "./setup.js";
 
@@ -51,11 +51,6 @@ describe("runs", () => {
     expect(runIdOf("automerge:abc123")).toBe("abc123");
     expect(runIdOf("abc123")).toBe("abc123");
   });
-
-  it("the terminal statuses", () => {
-    expect(STATUSES.filter(isTerminal)).toEqual(["done", "failed", "cancelled"]);
-    for (const s of STAGES) expect(STATUSES).toContain(s.status);
-  });
 });
 
 describe("studies", () => {
@@ -67,8 +62,8 @@ describe("studies", () => {
   });
 });
 
-// What a stopped or interrupted run writes, and the status a person sees,
-// are the kit's (src/task-runs.js), tested in the tasks package.
+// What a stopped or interrupted run writes, the status a person sees, and
+// which statuses end a run, are the Tasks package's client's, tested there.
 
 describe("encodeLayer and decodeLayer", () => {
   const layer = {

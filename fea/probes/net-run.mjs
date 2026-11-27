@@ -32,15 +32,12 @@
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn, execFileSync } from "node:child_process";
 import { Repo, initSubduction } from "@automerge/automerge-repo";
 import { box, plateWithHole } from "../src/test/shapes.js";
 import { encodeGLB } from "../src/glb.js";
-import { newRun, isTerminal, decodeLayer, RUN_CODE } from "../src/protocol.js";
-import { askRun, setPackageUrl, hearServing, findWhenThere, MACHINE_STOPPED, NOT_RESTARTED } from "../src/task-runs.js";
-import { served } from "../src/task-client.js";
-import { taskState, allHeard, LAPSE_MS } from "../src/task-rules.js";
+import { newRun, decodeLayer, RUN_CODE } from "../src/protocol.js";
 import { internalize } from "../src/segments.js";
 import { normalizeSetup } from "../src/setup.js";
 import * as model from "../src/study-model.js";
@@ -50,6 +47,9 @@ const PKG = resolve(HERE, "..");
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), []));
 const TASKS_HOST = resolve(process.env.TASKS_HOST ?? join(PKG, "../tasks/dist-node/host.mjs"));
 if (!existsSync(TASKS_HOST)) throw new Error(`no tasks host at ${TASKS_HOST}: set TASKS_HOST`);
+// this probe is not a pool: it has no registry, and takes the client's Node build from beside the host
+const tasks = await import(pathToFileURL(join(dirname(TASKS_HOST), "task-client.mjs")).href);
+const { hearServing, findWhenThere, served, isRunEnded, taskState, allHeard, LAPSE_MS, MACHINE_STOPPED, NOT_RESTARTED } = tasks;
 const SYNC = args.sync ?? process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.inkandswitch.com";
 const STATE = resolve(args.state ?? mkdtempSync(join(tmpdir(), "fea-net-")));
 const CORES = String(args.cores ?? 2);
@@ -123,7 +123,8 @@ function startHost(queueArgs) {
 
 await initSubduction();
 const repo = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
-setPackageUrl(PACKAGE);
+// the run's code, as the task names it: this directory is the made-up package's (the host is given it)
+const code = `/${encodeURIComponent(PACKAGE)}/${RUN_CODE}`;
 
 const SHAPES = {
   // 100 × 40 × 5 mm with an 8 mm hole, held at −x and pulled 1 kN along +x
@@ -145,7 +146,7 @@ async function ask(title, shape, size, { tweak = null } = {}) {
   const S = SHAPES[shape];
   const file = await repo.create2({ "@patchwork": { type: "file" }, name: `${shape}.glb`, extension: "glb", mimeType: "model/gltf-binary", content: encodeGLB({ meshes: [{ name: shape, primitives: [{ positions: Float32Array.from(S.triangles) }] }] }) });
   const study = await repo.create2(model.newStudy(`net probe · ${title}`));
-  const ctx = { repo, handle: study, by: "net probe" };
+  const ctx = { repo, tasks, code, handle: study, by: "net probe" };
   const part = must(await model.linkPart(ctx, file.url), "linking the part").part;
   must(model.setMesh(ctx, { size }), "the mesh");
   must(model.addSupport(ctx, part, { kind: "fixed", name: "Held", faces: [facing(part, S.hold)] }), "the support");
@@ -157,7 +158,8 @@ async function ask(title, shape, size, { tweak = null } = {}) {
     const { ["@patchwork"]: _type, study: _study, ...frozen } = plain((await repo.find(study.doc().part.kept)).doc());
     frozen.title = shape;
     run = await repo.create2(newRun({ studyUrl: study.url, serverUrl: queueUrl, setup: tweak(normalizeSetup(study.doc().setup)), part: frozen, by: "net probe", now: Date.now(), title: `net probe · ${title}` }));
-    await askRun(repo, queueUrl, run, RUN_CODE);
+    const { taskUrl } = await tasks.ask(repo, queueUrl, { importUrl: code, input: { run: run.url }, key: run.url });
+    run.change((d) => void (d.task = taskUrl));
   }
   await repo.flush?.();
   const taskUrl = run.doc().task;
@@ -179,7 +181,7 @@ const taskWhen = (url, n, ms, what) =>
     const doc = await taskDoc(url);
     return doc?.runs?.length >= n && doc.runs.slice(0, n).every((r) => r.status) && doc;
   }, ms, what);
-const ended = (d) => isTerminal(d.status) && (d.status !== "done" || !!d.summary);
+const ended = (d) => isRunEnded(d.status) && (d.status !== "done" || !!d.summary);
 
 const host = startHost(["--new-queue", "fea net probe"]);
 queueUrl = await Promise.race([host.queue, host.exited.then((e) => Promise.reject(new Error(`the host exited: ${JSON.stringify(e)}`)))]);
@@ -207,7 +209,7 @@ try {
     const { run, taskUrl } = await ask("end to end", "plate", "coarse");
     const d = await until(() => ended(run.doc()) && run.doc(), 300_000, "the run to end");
     let layer = null;
-    if (d.layers?.skin) layer = decodeLayer(await internalize(repo, (await findWhenThere(repo, d.layers.skin)).doc()));
+    if (d.layers?.skin) layer = decodeLayer(await internalize(repo, (await findWhenThere(repo, d.layers.skin)).doc(), { find: findWhenThere }));
     check("run: a study runs end to end (done, its stress, its results readable here)", d.status === "done" && d.summary?.stress?.max > 0 && layer?.positions?.length > 0, { status: d.status, error: d.error, stress: d.summary?.stress?.max, points: layer?.positions?.length });
     check("run: its answer adds up (strain energy against the loads' work)", d.summary?.adrift != null && d.summary.adrift < 1e-3, { adrift: d.summary?.adrift });
     const t = await taskWhen(taskUrl, 1, 30_000, "the task to end");
@@ -221,9 +223,9 @@ try {
     await sleep(1500);
     const before = solverProcesses();
     const asked = Date.now();
-    const ok = await model.stopRun({ repo }, run.url);
+    const ok = await model.stopRun({ repo, tasks }, run.url);
     say(`  cancelled (${JSON.stringify(ok)}); solver processes then: ${before.length}`);
-    const d = await until(() => isTerminal(run.doc().status) && run.doc(), 60_000, "the run doc to say how it ended");
+    const d = await until(() => isRunEnded(run.doc().status) && run.doc(), 60_000, "the run doc to say how it ended");
     const gone = await until(() => solverProcesses().length === 0, 15_000, "the solver's processes to go").catch(() => false);
     const goneAfter = (Date.now() - asked) / 1000;
     check("cancel: the run doc says cancelled, at the solve", d.status === "cancelled" && d.stages.find((s) => s.id === "solve")?.note === "cancelled", { status: d.status, error: d.error, stages: d.stages.map((s) => `${s.id}:${s.status}:${s.note}`) });
@@ -239,7 +241,7 @@ try {
       return setup;
     };
     const { run, taskUrl } = await ask("run error", "plate", "coarse", { tweak: onNoFace });
-    const d = await until(() => isTerminal(run.doc().status) && run.doc(), 300_000, "the run to end");
+    const d = await until(() => isRunEnded(run.doc().status) && run.doc(), 300_000, "the run to end");
     check("error: the run doc says failed, with why", d.status === "failed" && /is on no face of the mesh/.test(d.error ?? ""), { status: d.status, error: d.error?.slice(0, 300) });
     say(`  failed at ${d.stages.find((s) => s.status === "failed")?.label}: ${String(d.error).slice(0, 200)}`);
     await sleep(8_000); // time for a second run, were there to be one
@@ -256,7 +258,7 @@ try {
     current.child.kill("SIGTERM");
     const exit = await current.exited;
     say(`  the host exited ${JSON.stringify(exit)}`);
-    const d = await until(() => isTerminal(run.doc().status) && run.doc(), 30_000, "the run doc to say the machine stopped");
+    const d = await until(() => isRunEnded(run.doc().status) && run.doc(), 30_000, "the run doc to say the machine stopped");
     check("stop: the run doc says the machine stopped", d.status === "failed" && d.error === MACHINE_STOPPED, { status: d.status, error: d.error });
     const lost = await taskWhen(taskUrl, 1, 30_000, "the run to be recorded");
     check("stop: its run is recorded lost (to be taken again)", lost.runs.length === 1 && lost.runs[0].status === "lost", lost.runs);

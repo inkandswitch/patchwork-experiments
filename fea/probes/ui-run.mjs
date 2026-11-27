@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync, copyFileSync, mkdirSync } from "node:fs";
 import { browser, checklist, sleep } from "./cdp.mjs";
+import { TASKS } from "./lib.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const arg = (name, fallback = null) => {
@@ -33,10 +34,11 @@ mkdirSync(runs, { recursive: true });
 if (DONE) copyFileSync(DONE, join(runs, "done.json"));
 if (MODAL) copyFileSync(MODAL, join(runs, "modal.json"));
 if (!existsSync(join(PKG, "dist/index.js"))) throw new Error("build first: pnpm build");
+if (!existsSync(join(TASKS, "dist/index.js"))) throw new Error(`no built Tasks package at ${TASKS}: set TASKS_HOST, or build ../tasks`);
 
 const W = 1300, H = 900;
 // the package is also served under a made-up automerge url, as Patchwork serves it (probes/ui-probe.html)
-const b = await browser({ root: PKG, port: Number(process.env.PROBE_PORT) || 4797, cdp: Number(process.env.PROBE_CDP) || 9797, page: "/probes/ui-probe.html", width: W, height: H, show: process.argv.includes("--show"), timeout: 300_000, mounts: { "/runs/": runs, "/automerge:feaProbePackageAbc/": PKG } });
+const b = await browser({ root: PKG, port: Number(process.env.PROBE_PORT) || 4797, cdp: Number(process.env.PROBE_CDP) || 9797, page: "/probes/ui-probe.html", width: W, height: H, show: process.argv.includes("--show"), timeout: 300_000, mounts: { "/runs/": runs, "/automerge:feaProbePackageAbc/": PKG, "/tasks/": TASKS } });
 const P = (e) => b.js(`window.__p.${e}`);
 const until = (expr, ms = 20_000) => b.waitFor(expr, ms, 60);
 const list = checklist();
@@ -62,7 +64,12 @@ async function clickFace(id) {
 try {
   check("page set up", (await until("window.__ready === true", 20_000)) && (await P("errors")).length === 0, await P("errors"));
   const made = await P("setup()");
+  // the Tasks package arrives after the study is open
+  const before = await P(`text(".fea .panel")`);
+  check("without the Tasks package, the study says so and nothing else", before === "This needs the Tasks package, which is not installed here.", before);
+  await P(`install("/tasks/dist/index.js")`);
   await until(`!!document.querySelector(".fea .part-url")`);
+  check("once it arrives, the study carries on", true);
   let rb = await P("runButton()");
   check("an empty study says what to do first, and Run is off", rb.disabled === true && rb.why.some((w) => /Link a part/.test(w)), rb);
   await shot("1-empty");

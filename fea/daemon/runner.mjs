@@ -17,8 +17,7 @@ import { applySetup } from "../src/solver/loads.js";
 import { writeDeck } from "../src/solver/deck.js";
 import { readFrd, readDat } from "../src/solver/frd.js";
 import { vonMises, summarizeStatic, summarizeModal, skinLayer, staticNotes } from "../src/solver/post.js";
-import { runIdOf, isTerminal, STAGES, encodeLayer } from "../src/protocol.js";
-import { markStopped, STOP_REASONS } from "../src/task-runs.js";
+import { runIdOf, STAGES, encodeLayer } from "../src/protocol.js";
 import { getBytes, externalize, serverWatch, sha256 } from "../src/segments.js";
 import { pretty } from "../src/units.js";
 
@@ -62,6 +61,7 @@ export function deckOutline(text, keep = 6) {
  * @param {object} o
  * @param {import("@automerge/automerge-repo").Repo} o.repo
  * @param {import("@automerge/automerge-repo").DocHandle} o.handle   the run doc
+ * @param {{ findWhenThere: Function, isRunEnded: Function, markStopped: Function, STOP_REASONS: readonly string[] }} o.tasks  the Tasks package's client
  * @param {{ gmsh: string, ccx: string, gmshVersion: string|null, ccxVersion: string|null }} o.tools
  * @param {string} o.workDir      where run directories go
  * @param {number} o.cores        the default when the setup says 0
@@ -72,9 +72,9 @@ export function deckOutline(text, keep = 6) {
  * @param {(urls: string[]) => Promise<string[]>} [o.verify]  a second peer's check of docs the server didn't acknowledge (src/segments.js)
  * @returns {Promise<"done"|"failed"|"cancelled"|"stopped">}  "stopped": told to stop by `signal` (the run doc says why, unless it yielded)
  */
-export async function runJob({ repo, handle, tools, workDir, cores, maxNodes, daemon, say = () => {}, signal = null, verify = null }) {
+export async function runJob({ repo, handle, tasks, tools, workDir, cores, maxNodes, daemon, say = () => {}, signal = null, verify = null }) {
   const run0 = handle.doc();
-  if (isTerminal(run0.status)) return run0.status;
+  if (tasks.isRunEnded(run0.status)) return run0.status;
   const setup = normalizeSetup(run0.setup);
   // which of the docs this job makes the sync server has (start it before making any)
   const onServer = serverWatch(repo);
@@ -108,10 +108,10 @@ export async function runJob({ repo, handle, tools, workDir, cores, maxNodes, da
   let killed = null; // the kill under way: done once every process under the program has been sent SIGKILL
   const onAbort = () => {
     if (stopKind) return;
-    const reason = STOP_REASONS.includes(signal.reason) ? signal.reason : "stopping";
+    const reason = tasks.STOP_REASONS.includes(signal.reason) ? signal.reason : "stopping";
     say(`run ${id}: ${reason}`);
     killed = current?.kill() ?? null;
-    handle.change((d) => markStopped(d, reason, now()));
+    handle.change((d) => tasks.markStopped(d, reason, now()));
     stopKind = reason;
   };
   if (signal?.aborted) onAbort();
@@ -164,8 +164,9 @@ export async function runJob({ repo, handle, tools, workDir, cores, maxNodes, da
 
     // ---- the part
     begin("prepare");
-    const stl = await getBytes(repo, run0.part?.stl).catch((err) => fail("prepare", `the run's part didn't arrive: ${err.message}`));
-    const faceOf = await getBytes(repo, run0.part?.faceOf).catch((err) => fail("prepare", `the run's part didn't arrive: ${err.message}`));
+    const find = tasks.findWhenThere;
+    const stl = await getBytes(repo, run0.part?.stl, { find }).catch((err) => fail("prepare", `the run's part didn't arrive: ${err.message}`));
+    const faceOf = await getBytes(repo, run0.part?.faceOf, { find }).catch((err) => fail("prepare", `the run's part didn't arrive: ${err.message}`));
     if (!stl?.byteLength || !faceOf?.byteLength) fail("prepare", "the run has no part");
     const part = decodePart({ ...run0.part, stl, faceOf });
     if (!part.solid) fail("prepare", `the part can't be meshed: ${part.problems.join("; ") || "it isn't a closed solid"}`);
@@ -290,7 +291,7 @@ export async function runJob({ repo, handle, tools, workDir, cores, maxNodes, da
     const { value, handles } = await externalize(repo, { ...encodeLayer({ name: "skin", ...layer }), title, run: handle.url }, { title });
     const layerHandle = await repo.create2(value);
     // the layer doc is new: let it reach the sync server before its link does
-    // (readers retry too, src/task-runs.js findWhenThere; this keeps the first look from missing it)
+    // (readers retry too, by findWhenThere; this keeps the first look from missing it)
     const there = await onServer.wait([...handles, layerHandle], { timeoutMs: 120_000, ackMs: 30_000, verify });
     if (there.ok === null) await new Promise((res) => setTimeout(res, 1500));
     else if (!there.ok) say(`run ${id}: the server hasn't acknowledged the results doc; readers will retry`);

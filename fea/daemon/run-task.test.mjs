@@ -1,72 +1,69 @@
-// What of the run's task code is this package's own, with a fake repo and a
-// fake runner (no solver): the runner handed this machine's gmsh and
-// CalculiX, cores, mesh cap and directories with a second peer it closes
-// after, the machine read from the environment, and the echo a task view is
+// What of the run's task code is this package's own, with a fake repo, a
+// fake runner (no solver) and a stand-in for the Tasks package's client: the
+// code is that client's makeRunTask, from the pool's registry, made of this
+// package's own; the runner handed the client, this machine's gmsh and
+// CalculiX, cores, mesh cap and directories, with a second peer it closes
+// after; the machine read from the environment; and the echo a task view is
 // told. The rest (the guard, stopping, a run doc that arrives late, each way
-// a run ends) is the kit's makeRunTask, tested in the tasks package
-// (src/task-runs.test.ts).
+// a run ends) is makeRunTask's, tested in the Tasks package; probes/net-run.mjs
+// runs this code on a real tasks host.
 import { describe, it, expect, beforeEach } from "vitest";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { solve, machineSettings, thisMachine, progressOf, RUN_TASK } from "./run-task.mjs";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import runTask, { solve, machineSettings, thisMachine, progressOf, RUN_TASK } from "./run-task.mjs";
 import { FakeRepo } from "../src/test/fake-repo.js";
-import { newRun } from "../src/protocol.js";
+import { standIn } from "../src/test/tasks-stand-in.js";
+import { newRun, RUN_TYPE } from "../src/protocol.js";
 import { normalizeSetup } from "../src/setup.js";
-import { makeRunTask, findWhenThere } from "../src/task-runs.js";
-import { GRACE_MS } from "../src/task-rules.js";
 
-let repo, run;
+let repo, run, tasks;
 const MACHINE = { tools: { gmsh: "/x/gmsh", ccx: "/x/ccx", gmshVersion: "4.15", ccxVersion: "2.23" }, cores: 4, maxNodes: 100_000, state: "/tmp/fea-state", sync: "wss://example.invalid", info: { host: "here", calculix: "2.23", gmsh: "4.15" } };
 
 beforeEach(() => {
   repo = new FakeRepo();
   run = repo.add(newRun({ studyUrl: "automerge:s", serverUrl: "automerge:q", setup: normalizeSetup(null), part: {}, now: 1 }));
+  tasks = standIn();
 });
 
-/** A task document with one open run, and a context for it. */
-function context() {
-  const task = repo.add({ importUrl: "/x/daemon/run-task.mjs", input: { run: run.url }, key: run.url, runs: [{ id: "r1", pool: "p", start: 0 }] });
-  const said = { progress: [], logs: [] };
-  return { said, ctx: { repo, taskUrl: task.url, run: "r1", key: run.url, signal: new AbortController().signal, log: (m) => said.logs.push(m), progress: (p) => said.progress.push(p) } };
-}
+/** The runner as makeRunTask calls it, with a fake runner and second peer. */
+const job = (o) => solve({ tasks, ...o })({ repo, handle: run, facts: MACHINE, signal: new AbortController().signal, say: () => {} });
 
-/** This package's task code, as the default export makes it, with a fake runner and machine, and no hold on sleep. */
-const task = (runJob) =>
-  makeRunTask({ ...RUN_TASK, machine: () => MACHINE, runJob, awake: () => () => {}, say: () => {}, find: (r, url) => findWhenThere(r, url, { tries: 2, sleep: async () => {} }) });
+describe("the task's code", () => {
+  it("is makeRunTask from the pool's registry, made of this package's own", async () => {
+    getRegistry("patchwork:library").register({ type: "patchwork:library", id: "tasks-next", load: async () => tasks });
+    const ctx = { repo };
+    const r = await runTask({ run: run.url }, ctx);
+    expect(r.input).toEqual({ run: run.url });
+    expect(r.ctx).toBe(ctx);
+    expect(r.made).toMatchObject({ ...RUN_TASK, type: RUN_TYPE, what: "an FEA run", progressOf });
+    expect(typeof r.made.runJob).toBe("function");
+  });
+  it("told to stop, gives its runner its program's kill and a little over, inside the host's grace of five seconds", () => {
+    expect(RUN_TASK.stopWait).toBeLessThan(5_000);
+  });
+});
 
 describe("the runner", () => {
-  it("told to stop, is given its program's kill and a little over, inside the host's grace", () => {
-    expect(RUN_TASK.stopWait).toBeLessThan(GRACE_MS);
-  });
-  it("is handed this machine's tools, cores, mesh cap and directories, and a second peer that is closed when it ends", async () => {
+  it("is handed the client, this machine's tools, cores, mesh cap and directories, and a second peer that is closed when it ends", async () => {
     const calls = [];
+    const peers = [];
     let closed = 0;
     const verify = async () => [];
-    const { ctx } = context();
-    const runJob = solve({
-      runJob: async (o) => {
-        calls.push(o);
-        o.handle.change((d) => (d.status = "done"));
-        return "done";
-      },
-      peer: () => ({ verify, close: async () => void closed++ }),
-    });
-    expect(await task(runJob)({ run: run.url }, ctx)).toEqual({ status: "done" });
+    const peer = (sync, find) => {
+      peers.push([sync, find]);
+      return { verify, close: async () => void closed++ };
+    };
+    expect(await job({ runJob: async (o) => (calls.push(o), "done"), peer })).toBe("done");
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ handle: run, tools: MACHINE.tools, cores: 4, maxNodes: 100_000, workDir: "/tmp/fea-state/runs", daemon: MACHINE.info, signal: ctx.signal, verify });
+    expect(calls[0]).toMatchObject({ handle: run, tasks, tools: MACHINE.tools, cores: 4, maxNodes: 100_000, workDir: "/tmp/fea-state/runs", daemon: MACHINE.info, verify });
+    expect(peers).toEqual([[MACHINE.sync, tasks.findWhenThere]]);
     expect(closed).toBe(1);
   });
   it("closes its peer when the runner throws too", async () => {
     let closed = 0;
-    const { ctx } = context();
-    const runJob = solve({ runJob: async () => Promise.reject(new Error("*ERROR in e_c3d: nonpositive jacobian")), peer: () => ({ verify: null, close: async () => void closed++ }) });
-    await expect(task(runJob)({ run: run.url }, ctx)).rejects.toThrow("nonpositive jacobian");
-    expect([closed, run.doc().status]).toEqual([1, "failed"]);
-  });
-  it("refuses a run doc of another package's", async () => {
-    const { ctx } = context();
-    const other = repo.add({ "@patchwork": { type: "openfoam-run" } });
-    await expect(task(async () => "done")({ run: other.url }, ctx)).rejects.toThrow(/isn't an FEA run/);
+    await expect(job({ runJob: async () => Promise.reject(new Error("*ERROR in e_c3d: nonpositive jacobian")), peer: () => ({ verify: null, close: async () => void closed++ }) })).rejects.toThrow("nonpositive jacobian");
+    expect(closed).toBe(1);
   });
 });
 
@@ -85,27 +82,12 @@ describe("the machine, from the environment", () => {
 });
 
 describe("what a task view is told", () => {
-  it("the status and the stage as the run doc has them, and a log line per stage", async () => {
-    const { ctx, said } = context();
-    await task(async ({ handle }) => {
-      handle.change((d) => {
-        d.status = "meshing";
-        d.stages[0].status = "running";
-      });
-      handle.change((d) => {
-        d.stages[0].status = "done";
-        d.stages[1].status = "running";
-      });
-      handle.change((d) => {
-        d.stages[1].status = "done";
-        d.stages[3].status = "running";
-        d.status = "solving";
-      });
-      handle.change((d) => (d.status = "done"));
-      return "done";
-    })({ run: run.url }, ctx);
-    expect(said.progress.map((p) => `${p.status}|${p.stage}`)).toEqual(["queued|null", "meshing|Read the part", "meshing|Mesh it (gmsh)", "solving|Solve (CalculiX)", "done|Solve (CalculiX)"]);
-    expect(said.logs).toEqual(["Read the part", "Mesh it (gmsh)", "Solve (CalculiX)", "done"]);
-    expect(progressOf(run.doc())).toEqual({ status: "done", stage: "Solve (CalculiX)" });
+  it("the status and the stage the run doc has running", () => {
+    const doc = run.doc();
+    expect(progressOf(doc)).toEqual({ status: "queued", stage: null });
+    doc.status = "solving";
+    doc.stages[3].status = "running";
+    expect(progressOf(doc)).toEqual({ status: "solving", stage: "Solve (CalculiX)" });
+    expect(progressOf(null)).toEqual({ status: null, stage: null });
   });
 });

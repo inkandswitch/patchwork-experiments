@@ -38,7 +38,7 @@
   import { FakeRepo } from "/probes/fake-repo.js";
   import { getRegistry } from "/probes/plugins-stub.js";
   // the build, served as Patchwork serves a package (under its automerge url), so that
-  // the study names its run's code the way it does there (src/task-runs.js codeUrl)
+  // the study names its run's code the way it does there (study-model.js runStudy)
   import { plugins } from "/automerge%3AfeaProbePackageAbc/dist/index.js";
   import { encodeGLB, parseGLB } from "/src/glb.js";
   import * as shapes from "/src/test/shapes.js";
@@ -51,7 +51,7 @@
   const repo = new FakeRepo();
   window.repo = repo;
   for (const p of plugins) getRegistry(p.type).register(p);
-  // other packages' built plugins, named in ?plugins= (a CAD tool whose models are linked as parts)
+  // other packages' built plugins, named in ?plugins= (the Tasks package, a CAD tool whose models are linked as parts)
   for (const url of (new URLSearchParams(location.search).get("plugins") ?? "").split(",").filter(Boolean)) for (const p of (await import(url)).plugins) getRegistry(p.type).register(p);
   const tool = async (id) => (await getRegistry("patchwork:tool").load(id)).module;
   const datatype = async (id) => (await getRegistry("patchwork:datatype").load(id)).module;
@@ -107,6 +107,10 @@
       study = repo.add(doc);
       unmountTool = (await tool("fea-study"))(study, host);
       return { study: study.url, server: server.url };
+    },
+    /** a package arriving: its built plugins registered now */
+    async install(url) {
+      for (const p of (await import(url)).plugins) getRegistry(p.type).register(p);
     },
     file(shape) {
       return glbFile(shape, SHAPES[shape]()).url;
@@ -224,6 +228,8 @@
     async openTool(id, url) {
       unmountTool?.();
       unmountTool = (await tool(id))(repo.handles.get(url), host);
+      // it draws once it has the Tasks package's client
+      for (let i = 0; i < 100 && !host.innerText.trim(); i++) await new Promise((r) => setTimeout(r, 20));
       return host.innerText.replace(/\s+/g, " ").slice(0, 20000);
     },
     async reopen() {

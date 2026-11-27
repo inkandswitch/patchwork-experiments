@@ -10,7 +10,8 @@
 # package's Node host, an installed program like gmsh and CalculiX
 # themselves: TASKS_HOST names it) that serves the queue and runs each run's
 # code from this directory (daemon/run-task.mjs; FEA_PACKAGE is this
-# package's automerge url, which the runs' tasks name).
+# package's automerge url, which the runs' tasks name). The run's code takes
+# the Tasks client from the host's own registry, which every host has.
 #
 # --new-queue makes a queue and prints its link: paste that link into a
 # study's Server field. Start it again with --queue <that link> to serve the
@@ -37,7 +38,7 @@
 # dependencies the first time.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-usage() { sed -n '2,36p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 1; }
+usage() { sed -n '2,38p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 1; }
 
 queue=()
 jobs=1
