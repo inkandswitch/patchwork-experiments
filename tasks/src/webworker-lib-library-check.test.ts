@@ -29,12 +29,7 @@ describe("a browser run worker's registry, as pluginMirror makes it", () => {
     expect((await plugins.getRegistry('patchwork:library').loadWhenReady('tasks-next')).module).toBe(client);
   });
 
-  // DEFECT (minor): pluginMirror waits for both modules before it registers
-  // anything, so a run worker whose import map cannot give it
-  // @inkandswitch/patchwork-filesystem has no registry at all ("this run
-  // worker has no plugin registry"), and task code that asks for tasks-next
-  // waits for ever, though the pool's own needs only the registry module.
-  it.fails("where the filesystem module cannot be had, still gives the pool's own build", async () => {
+  it("where the filesystem module cannot be had, still gives the pool's own build", async () => {
     shim(() => Promise.reject(new Error('offline, not kept')));
     const agree = await pluginMirror([TASKS_LIBRARY]);
     agree({ snapshot: [] });

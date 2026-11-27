@@ -39,15 +39,14 @@ export const importModule = (importUrl: string): Promise<any> =>
  * `@inkandswitch/patchwork-plugins` through the page's import map, made to
  * agree with each snapshot it is handed. A plugin's load() is core's
  * `importPluginFromFolderDocUrl`, as on the page: its package is served by
- * this site's service worker. `own` stands where nothing installed has its
- * type and id (`mirror`).
+ * this site's service worker; its module is imported only then, so `own`,
+ * which stands where nothing installed has its type and id (`mirror`), needs
+ * only the registry's.
  */
 export async function pluginMirror(own: { type: string; id: string }[]): Promise<(plugins: PluginsHere) => void> {
-  const [registry, files] = await Promise.all([
-    (self as any).importShim('@inkandswitch/patchwork-plugins'),
-    (self as any).importShim('@inkandswitch/patchwork-filesystem'),
-  ]);
-  const agree = mirror(registry.getRegistry, files.importPluginFromFolderDocUrl, own);
+  const registry = await (self as any).importShim('@inkandswitch/patchwork-plugins');
+  const agree = mirror(registry.getRegistry, async (importUrl, type, id) =>
+    (await (self as any).importShim('@inkandswitch/patchwork-filesystem')).importPluginFromFolderDocUrl(importUrl, type, id), own);
   return ({ snapshot }) => agree(snapshot);
 }
 
