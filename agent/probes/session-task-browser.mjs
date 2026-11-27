@@ -96,6 +96,7 @@ const vendor = {
   "automerge-slim": "@automerge/automerge/slim",
   "automerge-repo-slim": "site-automerge-repo/slim",
   "automerge-repo-storage-indexeddb": "site-automerge-repo-storage-indexeddb",
+  "automerge-repo-network-messagechannel": "@automerge/automerge-repo-network-messagechannel",
   "automerge-subduction-slim": "@automerge/automerge-subduction/slim",
   "solid-js": "solid-js",
   "solid-js-web": "solid-js/web",
@@ -122,6 +123,14 @@ await build({
       name: "leave-the-full-builds-out",
       setup(b) {
         b.onResolve({ filter: /^@automerge\/automerge(-subduction)?$/ }, ({ path }) => ({ path, external: true }));
+      },
+    },
+    {
+      name: "one-repo-for-the-adapter",
+      setup(b) {
+        b.onResolve({ filter: /^@automerge\/automerge-repo\/slim$/ }, (args) =>
+          /automerge-repo-network-messagechannel/.test(args.importer) ? b.resolve("site-automerge-repo/slim", { resolveDir: TASKS, kind: args.kind }) : undefined,
+        );
       },
     },
   ],

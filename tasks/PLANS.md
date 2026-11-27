@@ -128,8 +128,8 @@ that one machine serves.
 - **Left to the Repo.** Three things the task system does not do, because they are a Repo's:
   - *Sending what was stored but not sent.* A Repo sends a document only while it has it open,
     and loads a stored one only when something asks for it. So what a worker or a page wrote but
-    had not sent before a reload or a restart (with no network, or a worker ended the moment its
-    run did) is not sent until something opens it. A design bug is being logged with Subduction.
+    had not sent before a reload or a restart (with no network, or a worker ended with its run or
+    stopped mid-run) is not sent until something opens it. A design bug is being logged with Subduction.
   - *Holding a run's ending until others have its writes.* A run is reported once its worker's
     Repo has saved what it wrote; the page and the sync server have it as the Repos sync it. With
     no network, a page reloaded the instant a run ends may lack the run's writes, which then wait
@@ -161,15 +161,9 @@ that one machine serves.
     run it until the network returns, which the no-network law does not allow.
 - **A new worker for every run.** A worker is reused after a run that ended by itself, so code one
   task leaves running shares a thread with the next. Confining task code (an opaque-origin worker in
-  a browser) requires fresh workers, and so does treating tasks as strangers to each other. A
-  worker ended once its run has ended has saved what it wrote, but what its Repo had not yet sent
-  waits in its storage ("Left to the Repo"). This waits on confinement, on that, and on what a
-  fresh worker costs: its start, and on a Node host its Repo's first connection to the server
-  (not measured on their own).
-- **What a stopped worker leaves behind.** A worker ended mid-run (a stopped run not done within
-  five seconds, a tab or process that died) leaves what it had not sent in its storage, and the
-  next worker on that storage does not send it ("Left to the Repo"). In a browser what a run
-  worker writes crosses its pipe as it writes (browser-run check 29), so at most its last moments.
+  a browser) requires fresh workers, and so does treating tasks as strangers to each other. This
+  waits on confinement, on the first of "Left to the Repo", and on what a fresh worker costs: its
+  start, and on a Node host its Repo's first connection to the server (not measured on their own).
 - **Finding queues.** A page with no document that names a queue asks its person's own queue
   (`ownQueue`). Queues one only asks of, and does not serve, have no place to be kept: the task
   storage could keep them as root keys of their own whose setting serves nothing, and tools pick

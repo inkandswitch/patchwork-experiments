@@ -719,12 +719,8 @@ class BrowserPoolHost implements PoolHost {
           return; // a message sent before the worker was ended
         }
         switch (data?.type) {
-          case 'link':
-            if (site) {
-              pipes.set(`run ${data.id}`, pipe(site, data.port));
-            } else {
-              data.port.close();
-            }
+          case 'link': // sent only by a pool whose 'start' carried a port, so only with `site`
+            pipes.set(`run ${data.id}`, pipe(site!, data.port));
             break;
           case 'unlink':
             unpipe(`run ${data.id}`);
@@ -758,8 +754,8 @@ class BrowserPoolHost implements PoolHost {
       };
 
       const link = site ? new MessageChannel() : null;
-      if (site && link) {
-        pipes.set('pool', pipe(site, link.port1));
+      if (link) {
+        pipes.set('pool', pipe(site!, link.port1));
       }
       worker.postMessage(
         {

@@ -155,14 +155,9 @@ function resolveImportMap(importMap: any, baseURI: string) {
  * nothing; a channel of its own would be the same with one more object.
  *
  * A worker under a page that holds the site's Repo is handed its end of a
- * pipe to it (`link`, browser/pool-host.ts), which its Repo takes as its one
- * network adapter, the MessageChannel adapter the page's import map names,
- * and then it has no socket to the sync server: the page's Repo is its way to
- * everything, the server included, network or no network. A Repo asks its
- * classic peers (the pipe) for a document it does not have only once its
- * Subduction source has given up, and a Subduction source that cannot reach
- * its server is still trying, so with a socket of its own and no network a
- * worker would never ask the page.
+ * pipe to it (`link`, browser/pool-host.ts), which its Repo takes as its only
+ * network adapter, with no socket of its own (PLANS, "Piped workers have no
+ * socket of their own").
  *
  * No `signer`, on purpose: the Repo makes itself a new identity each time. The
  * tabs on an origin all sign as one peer, and a worker that did the same would
