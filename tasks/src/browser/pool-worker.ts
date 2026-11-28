@@ -149,6 +149,7 @@ async function start(settings: Extract<ToPoolWorker, { type: 'start' }>): Promis
       baseURI: settings.baseURI,
     },
     link: linkRunWorker,
+    taskBytes: (taskUrl) => repo.export(taskUrl),
   });
   executor.plugins.set({ snapshot: plugins });
   return new Pool({

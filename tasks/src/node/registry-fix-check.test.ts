@@ -89,6 +89,7 @@ parentPort.on('message', (m) => {
       script: pathToFileURL(standIn),
       settings: {},
       link: () => ({ port: new MessageChannel().port2 as unknown as MessagePort, end() {} }),
+      taskBytes: async () => undefined,
     });
   const recorder = () => {
     const said: string[] = [];

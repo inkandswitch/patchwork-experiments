@@ -22,7 +22,7 @@
 // pool is the tasks package, so the task client (TASKS_LIBRARY) is always
 // there: this build's own, until an installed one replaces it.
 
-import type { Repo } from '@automerge/automerge-repo/slim';
+import type { DocumentId, Repo } from '@automerge/automerge-repo/slim';
 import { getRepo, importModule, pluginMirror, setUpImportMap, type PlaceSettings } from './webworker-lib';
 import { findWhenThere } from './task-client.js';
 import { TASKS_LIBRARY, WORKER_PEER } from './ids';
@@ -52,7 +52,12 @@ export interface RunWorkerSettings {
 /** What is said to a run worker. */
 export type ToRunWorker =
   | { type: 'settings'; settings: RunWorkerSettings }
-  | { type: 'job'; job: Job }
+  /**
+   * A job, with the task's document as the pool has it (`Automerge.save` of
+   * it), or null when the pool cannot export it: then the worker finds the
+   * document through its pipe, as it finds any other.
+   */
+  | { type: 'job'; job: Job; task: Uint8Array | null }
   | { type: 'abort'; reason: StopReason }
   /** The pool has held this run for a beat and nothing stops it: resolves the code's `ctx.settled`, if it is still this worker's job. */
   | { type: 'settled'; run: string }
@@ -117,7 +122,7 @@ export function serve(port: RunWorkerPort) {
         running = controller;
         // Made before the code is imported, so that a settle said meanwhile counts.
         settling = settlingOf(message.job.runId, controller.signal);
-        runJob(message.job, controller.signal, settling.promise).then(
+        runJob(message.job, message.task, controller.signal, settling.promise).then(
           () => {
             if (running === controller) {
               running = null;
@@ -138,7 +143,7 @@ export function serve(port: RunWorkerPort) {
     }
   });
 
-  async function runJob(job: Job, signal: AbortSignal, settled: Promise<void>) {
+  async function runJob(job: Job, task: Uint8Array | null, signal: AbortSignal, settled: Promise<void>) {
     let outcome: FromRunWorker;
     // Code can go on after it has returned or thrown (a timer, a promise it
     // did not wait for), and the worker may by then have the next job: what
@@ -154,6 +159,10 @@ export function serve(port: RunWorkerPort) {
         throw new Error('its worker was handed a job before it was set up');
       }
       const docs = await repo;
+      if (task) {
+        // The bytes save this worker the host's first-send wait on a newly opened document (design bug 6 in notes/DESIGN-BUGS-STORAGE-AND-REPLICATION.md); remove when that is fixed.
+        docs.import(task, { docId: documentIdOf(job.taskUrl) });
+      }
       // what the pool's registry has, before the code can ask it
       await registry?.catch(() => {});
       const module = await importModule(job.importUrl);
@@ -278,6 +287,10 @@ export function patient(repo: Repo): Repo {
       return Reflect.set(target, name, value, target);
     },
   });
+}
+
+function documentIdOf(url: string): DocumentId {
+  return url.replace(/^automerge:/, '').split(/[#/]/)[0] as DocumentId;
 }
 
 /** Resolves after `ms`, or rejects with the signal's reason as soon as it aborts, leaving no timer or listener behind. */

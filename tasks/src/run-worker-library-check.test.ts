@@ -83,17 +83,17 @@ describe("a run worker's own library", () => {
     const { tell, ending } = start();
 
     tell({ type: 'settings', settings: { link: new MessageChannel().port1 } });
-    tell({ type: 'job', job: job(1) });
+    tell({ type: 'job', job: job(1), task: null });
     expect(await ending()).toEqual({ type: 'done', result: 'own' });
     expect(order).toEqual(['agreed 0', 'imported data:text/javascript,asks', 'ran']);
     expect(ownGiven?.map(({ type, id }) => `${type} ${id}`)).toEqual(['patchwork:library tasks-next']);
 
     tell({ type: 'plugins', plugins: { snapshot: [described] } });
-    tell({ type: 'job', job: job(2) });
+    tell({ type: 'job', job: job(2), task: null });
     expect(await ending()).toEqual({ type: 'done', result: installed });
 
     tell({ type: 'plugins', plugins: { snapshot: [] } });
-    tell({ type: 'job', job: job(3) });
+    tell({ type: 'job', job: job(3), task: null });
     expect(await ending()).toEqual({ type: 'done', result: 'own' });
   });
 });

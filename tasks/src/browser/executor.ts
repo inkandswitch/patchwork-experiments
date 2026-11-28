@@ -14,6 +14,10 @@
 // its settings, its only way to documents, and the pipe is ended with its
 // `exit`.
 //
+// A job goes to its run worker with the task's document as the pool has it
+// saved (null where the pool cannot export it: the worker then finds it
+// through its pipe), and what is said after a job waits behind it.
+//
 // Each run worker is told the pool's registry (../registry-snapshot.ts) in
 // its settings, and again, in its turn, whenever the page sends a newer one.
 
@@ -33,6 +37,8 @@ export interface BrowserExecutorOptions {
   settings: Omit<RunWorkerSettings, 'link' | 'plugins'>;
   /** A new pipe to the page's Repo for a run worker that is starting. */
   link(): RunWorkerLink;
+  /** The task's document as the pool has it, saved, handed to the run worker with its job; undefined when the pool cannot export it. */
+  taskBytes(taskUrl: Job['taskUrl']): Promise<Uint8Array | undefined>;
 }
 
 export class BrowserExecutor implements Executor {
@@ -42,7 +48,7 @@ export class BrowserExecutor implements Executor {
   constructor(private readonly options: BrowserExecutorOptions) {}
 
   start(events: WorkerEvents): RunWorker {
-    const { settings } = this.options;
+    const { settings, taskBytes } = this.options;
     const worker = new Worker(new URL('./run-worker-entry.ts', import.meta.url), {
       type: 'module',
       name: 'patchwork-task-run',
@@ -64,6 +70,12 @@ export class BrowserExecutor implements Executor {
       if (!over) {
         worker.postMessage(message);
       }
+    };
+    // A job goes with the task's document, which takes a moment to read. What
+    // is said after it waits its turn, so that neither an abort nor a settle overtakes its job.
+    let said = Promise.resolve();
+    const inTurn = (message: () => Promise<ToRunWorker> | ToRunWorker) => {
+      said = said.then(async () => tell(await message())).catch((error) => console.error('tasks: telling a run worker something failed', error));
     };
 
     worker.onmessage = ({ data }: MessageEvent<FromRunWorker>) => {
@@ -107,12 +119,12 @@ export class BrowserExecutor implements Executor {
       [link.port],
     );
 
-    const unfollow = this.plugins.follow((plugins) => tell({ type: 'plugins', plugins }));
+    const unfollow = this.plugins.follow((plugins) => inTurn(() => ({ type: 'plugins', plugins })));
 
     return {
-      run: (job: Job) => tell({ type: 'job', job }),
-      abort: (reason: StopReason) => tell({ type: 'abort', reason }),
-      settle: (runId: string) => tell({ type: 'settled', run: runId }),
+      run: (job: Job) => inTurn(async () => ({ type: 'job', job, task: (await taskBytes(job.taskUrl).catch(() => undefined)) ?? null })),
+      abort: (reason: StopReason) => inTurn(() => ({ type: 'abort', reason })),
+      settle: (runId: string) => inTurn(() => ({ type: 'settled', run: runId })),
       terminate: () => {
         worker.terminate();
         exit();

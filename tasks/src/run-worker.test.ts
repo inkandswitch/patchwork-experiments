@@ -13,6 +13,8 @@ let said: FromRunWorker[];
 let modules: Record<string, unknown>;
 let repoFails: boolean;
 let theRepo: FakeRepo;
+/** Each document the Repo was given the bytes of, as events says in order. */
+let imported: { docId: string; bytes: Uint8Array }[];
 
 class FakeHandle {
   #n = 1;
@@ -45,6 +47,11 @@ class FakeRepo {
 
   get handles() {
     return { ...this.byId };
+  }
+  import(bytes: Uint8Array, args: { docId: string }) {
+    events.push('import');
+    imported.push({ docId: args.docId, bytes });
+    this.byId[args.docId] = new FakeHandle(args.docId);
   }
   async flush() {
     events.push('flush');
@@ -121,6 +128,7 @@ beforeEach(() => {
   said = [];
   modules = {};
   repoFails = false;
+  imported = [];
 });
 
 afterEach(() => {
@@ -138,11 +146,32 @@ describe('a run worker', () => {
     };
     const tell = start();
     tell(settings);
-    tell({ type: 'job', job: job('ok') });
+    tell({ type: 'job', job: job('ok'), task: null });
     await settle();
     expect(seen).toEqual({ self: true, input: { n: 1 }, run: 'run-1', key: 'k', taskUrl: job('ok').taskUrl });
     expect(events).toEqual(['done']);
     expect(said).toEqual([{ type: 'done', result: { doubled: 2 } }]);
+  });
+
+  it("has the task's document, from the bytes its job carries, before the code is called", async () => {
+    modules.ok = { default: () => events.push('code') };
+    const bytes = new Uint8Array([1, 2, 3]);
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('ok'), task: bytes });
+    await settle();
+    expect(imported.map(({ docId, bytes }) => [docId, [...bytes]])).toEqual([['2KYqboWHPS5rvWsheoLnHgFvE7ou', [1, 2, 3]]]);
+    expect(events.indexOf('import')).toBeLessThan(events.indexOf('code'));
+  });
+
+  it('imports nothing for a job whose task the pool could not export, and runs it all the same', async () => {
+    modules.ok = { default: () => 1 };
+    const tell = start();
+    tell(settings);
+    tell({ type: 'job', job: job('ok'), task: null });
+    await settle();
+    expect(imported).toEqual([]);
+    expect(endings()).toEqual([{ type: 'done', result: 1 }]);
   });
 
   // Each way the code can fail ends in one `threw`, never in silence, and
@@ -163,7 +192,7 @@ describe('a run worker', () => {
       }
       const tell = start();
       tell(settings);
-      tell({ type: 'job', job: job('it') });
+      tell({ type: 'job', job: job('it'), task: null });
       await settle();
       expect(endings()).toHaveLength(1);
       expect(endings()[0].type).toBe('threw');
@@ -177,14 +206,14 @@ describe('a run worker', () => {
     repoFails = true;
     let tell = start();
     tell(settings);
-    tell({ type: 'job', job: job('ok') });
+    tell({ type: 'job', job: job('ok'), task: null });
     await settle();
     expect(endings()).toEqual([{ type: 'threw', message: 'no repo here' }]);
 
     said = [];
     repoFails = false;
     tell = start();
-    tell({ type: 'job', job: job('ok') });
+    tell({ type: 'job', job: job('ok'), task: null });
     await settle();
     expect(endings()).toEqual([{ type: 'threw', message: expect.stringMatching(/before it was set up/) }]);
   });
@@ -197,7 +226,7 @@ describe('a run worker', () => {
     };
     const tell = start();
     tell(settings);
-    tell({ type: 'job', job: job('waits') });
+    tell({ type: 'job', job: job('waits'), task: null });
     await settle();
     tell({ type: 'abort', reason: 'yielded' });
     await settle();
@@ -216,7 +245,7 @@ describe('a run worker', () => {
     };
     const tell = start();
     tell(settings);
-    tell({ type: 'job', job: job('talks') });
+    tell({ type: 'job', job: job('talks'), task: null });
     await settle();
     expect(said).toEqual([
       { type: 'log', message: 'a 1 [object Object]' },
@@ -241,9 +270,9 @@ describe('a run worker', () => {
     modules.ok = { default: () => 'second' };
     const tell = start();
     tell(settings);
-    tell({ type: 'job', job: job('lingers') });
+    tell({ type: 'job', job: job('lingers'), task: null });
     await new Promise((resolve) => setTimeout(resolve, 1));
-    tell({ type: 'job', job: { ...job('ok'), runId: 'run-2' } });
+    tell({ type: 'job', job: { ...job('ok'), runId: 'run-2' }, task: null });
     await settle();
     expect(said).toEqual([
       { type: 'done', result: 'early' },
@@ -270,7 +299,7 @@ describe('ctx.settled', () => {
     modules.slow = new Promise((resolve) => (imported = resolve));
     const tell = start();
     tell(settings);
-    tell({ type: 'job', job: job('slow') });
+    tell({ type: 'job', job: job('slow'), task: null });
     tell({ type: 'settled', run: 'run-1' });
     await settle();
     expect(endings()).toEqual([]);
@@ -284,9 +313,9 @@ describe('ctx.settled', () => {
     modules.waits = awaits;
     const tell = start();
     tell(settings);
-    tell({ type: 'job', job: job('quick') });
+    tell({ type: 'job', job: job('quick'), task: null });
     await settle();
-    tell({ type: 'job', job: { ...job('waits'), runId: 'run-2' } });
+    tell({ type: 'job', job: { ...job('waits'), runId: 'run-2' }, task: null });
     await settle();
     tell({ type: 'settled', run: 'run-1' });
     tell({ type: 'settled', run: 'someone else' });
@@ -306,7 +335,7 @@ describe('ctx.settled', () => {
       modules.waits = awaits;
       const tell = start();
       tell(settings);
-      tell({ type: 'job', job: job('waits') });
+      tell({ type: 'job', job: job('waits'), task: null });
       await settle();
       tell({ type: 'abort', reason });
       await settle();
@@ -335,7 +364,7 @@ describe('ctx.settled', () => {
       };
       const tell = start();
       tell(settings);
-      tell({ type: 'job', job: job('both') });
+      tell({ type: 'job', job: job('both'), task: null });
       await settle();
       for (const message of said) {
         tell(message === 'settled' ? { type: 'settled', run: 'run-1' } : { type: 'abort', reason: 'yielded' });
@@ -357,7 +386,7 @@ describe('ctx.settled', () => {
       };
       const tell = start();
       tell(settings);
-      tell({ type: 'job', job: job('ignores') });
+      tell({ type: 'job', job: job('ignores'), task: null });
       await settle();
       tell({ type: 'abort', reason: 'cancelled' });
       await settle();
@@ -392,12 +421,12 @@ describe('ctx.settled, as a checker attacks it', () => {
     modules.second = new Promise((resolve) => (imported = resolve));
     const tell = start();
     tell(settings);
-    tell({ type: 'job', job: { ...job('first'), runId: 'run-1' } });
+    tell({ type: 'job', job: { ...job('first'), runId: 'run-1' }, task: null });
     await settle();
     finishers.shift()!();
     await settle();
     expect(endings()).toEqual([{ type: 'done', result: 'run-1' }]);
-    tell({ type: 'job', job: { ...job('second'), runId: 'run-2' } });
+    tell({ type: 'job', job: { ...job('second'), runId: 'run-2' }, task: null });
     tell({ type: 'settled', run: 'run-1' });
     tell({ type: 'settled', run: 'run-1' });
     await settle();
@@ -431,7 +460,7 @@ describe('ctx.settled, as a checker attacks it', () => {
       modules.it = recording(outcomes, finishers);
       const tell = start();
       tell(settings);
-      tell({ type: 'job', job: { ...job('it'), runId: 'run-1' } });
+      tell({ type: 'job', job: { ...job('it'), runId: 'run-1' }, task: null });
       await settle();
       for (const word of words) {
         tell(word === 'settled' ? { type: 'settled', run: 'run-1' } : { type: 'abort', reason: 'cancelled' });
@@ -450,7 +479,7 @@ describe('ctx.settled, as a checker attacks it', () => {
     modules.slow = new Promise((resolve) => (imported = resolve));
     const tell = start();
     tell(settings);
-    tell({ type: 'job', job: { ...job('slow'), runId: 'run-1' } });
+    tell({ type: 'job', job: { ...job('slow'), runId: 'run-1' }, task: null });
     tell({ type: 'abort', reason: 'yielded' });
     tell({ type: 'settled', run: 'run-1' });
     await settle();
@@ -467,7 +496,7 @@ describe('what a run wrote is left to its Repo', () => {
     modules.ok = { default: (_: unknown, ctx: any) => ctx.repo.create({ x: 1 }).documentId };
     const tell = start();
     tell(settings);
-    tell({ type: 'job', job: job('ok') });
+    tell({ type: 'job', job: job('ok'), task: null });
     await settle();
     expect(events).toEqual(['done']);
   });
@@ -490,7 +519,7 @@ describe("the code's Repo", () => {
     };
     const tell = start();
     tell(settings);
-    tell({ type: 'job', job: job('code') });
+    tell({ type: 'job', job: job('code'), task: null });
     await vi.advanceTimersByTimeAsync(0);
     return () => settled;
   }

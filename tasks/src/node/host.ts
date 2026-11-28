@@ -310,6 +310,7 @@ export async function main(argv = process.argv.slice(2)) {
       const { port1, port2 } = new MessageChannel();
       return { port: port2, end: pipe(repo as any, port1 as unknown as MessagePort) };
     },
+    taskBytes: (taskUrl) => repo.export(taskUrl),
     say,
     maxHeapMb: options.maxHeapMb,
   });

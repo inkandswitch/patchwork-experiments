@@ -24,6 +24,7 @@ parentPort.on('message', (m) => {
   } else if (m.type === 'job') {
     const what = m.job.importUrl;
     if (what === 'return') parentPort.postMessage({ type: 'done', result: 7 });
+    if (what === 'bytes') parentPort.postMessage({ type: 'log', message: 'task ' + (m.task ? m.task.length : null) });
     if (what === 'hold') parentPort.postMessage({ type: 'log', message: 'job ' + m.job.runId });
     if (what === 'spin') for (;;) {}
     if (what === 'crash') setTimeout(() => { throw new Error('escaped'); });
@@ -61,6 +62,7 @@ function executor(scriptUrl = standIn, maxHeapMb?: number) {
     maxHeapMb,
     settings: {},
     link: () => ({ port: new MessageChannel().port2 as unknown as MessagePort, end: () => void ended.push('ended') }),
+    taskBytes: async () => new Uint8Array([1, 2, 3]),
   });
 }
 
@@ -181,6 +183,16 @@ describe('the Node executor', () => {
       expect(r.said[0]).toMatch(/^log its worker crashed/);
       expect(pool.threads).toBe(0);
     }
+  });
+
+  it("hands a thread the task's document with its job", async () => {
+    const pool = executor();
+    const r = recorder();
+    const worker = pool.start(r.events);
+    worker.run(job('bytes'));
+    await until(() => r.said.includes('log task 3'));
+    worker.terminate();
+    await r.gone;
   });
 
   it('hands each thread its end of a pipe in its settings, and ends the pipe with the thread', async () => {

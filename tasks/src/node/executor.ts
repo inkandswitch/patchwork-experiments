@@ -5,6 +5,10 @@
 // its settings, its only way to documents, and the pipe is ended with its
 // 'exit'.
 //
+// A job goes to its thread with the task's document as the host has it saved
+// (null where the host cannot export it: the thread then finds it through its
+// pipe), and what is said after a job waits behind it.
+//
 // Each thread's heap has a ceiling (`maxHeapMb`). A task that reaches it ends
 // its own thread, which the pool records as a lost run; without one, it would
 // take the whole process down, the pool and every other run with it.
@@ -24,6 +28,8 @@ export interface NodeExecutorOptions {
   settings: Omit<RunWorkerSettings, 'link' | 'plugins'>;
   /** A new pipe to the host's Repo for a thread that is starting. */
   link(): RunWorkerLink;
+  /** The task's document as the host has it, saved, handed to the thread with its job; undefined when the host cannot export it. */
+  taskBytes(taskUrl: Job['taskUrl']): Promise<Uint8Array | undefined>;
   /** For a person watching: a line for each thread started and ended and each run handed over and over. */
   say?(line: string): void;
   /** The most each thread's heap may grow to, in megabytes. */
@@ -55,7 +61,7 @@ export class NodeExecutor implements Executor {
   }
 
   start(events: WorkerEvents): RunWorker {
-    const { script, settings, say, maxHeapMb = DEFAULT_MAX_HEAP_MB } = this.options;
+    const { script, settings, taskBytes, say, maxHeapMb = DEFAULT_MAX_HEAP_MB } = this.options;
     const n = this.started++;
     const worker = new Worker(script, {
       name: `task-run-${n}`,
@@ -66,10 +72,16 @@ export class NodeExecutor implements Executor {
     const link = this.options.link();
     let job: Job | null = null;
     const tell = (message: ToRunWorker) => worker.postMessage(message);
+    // A job goes with the task's document, which takes a moment to read. What
+    // is said after it waits its turn, so that neither an abort nor a settle overtakes its job.
+    let said = Promise.resolve();
+    const inTurn = (message: () => Promise<ToRunWorker> | ToRunWorker) => {
+      said = said.then(async () => tell(await message())).catch((error) => console.error('tasks: telling a run worker something failed', error));
+    };
     worker.postMessage({ type: 'settings', settings: { ...settings, plugins: this.plugins.value, link: link.port } } satisfies ToRunWorker, [
       link.port as unknown as NodePort,
     ]);
-    const unfollow = this.plugins.follow((plugins) => tell({ type: 'plugins', plugins }));
+    const unfollow = this.plugins.follow((plugins) => inTurn(() => ({ type: 'plugins', plugins })));
 
     worker.on('message', (message: FromRunWorker) => {
       switch (message?.type) {
@@ -105,15 +117,15 @@ export class NodeExecutor implements Executor {
       run: (given) => {
         job = given;
         say?.(`run ${short(given)} of ${given.key} handed to thread ${n}`);
-        tell({ type: 'job', job: given });
+        inTurn(async () => ({ type: 'job', job: given, task: (await taskBytes(given.taskUrl).catch(() => undefined)) ?? null }));
       },
       abort: (reason: StopReason) => {
         say?.(`run ${short(job)} told to stop: ${reason}`);
-        tell({ type: 'abort', reason });
+        inTurn(() => ({ type: 'abort', reason }));
       },
       settle: (runId: string) => {
         say?.(`run ${runId.slice(0, 8)} settled`);
-        tell({ type: 'settled', run: runId });
+        inTurn(() => ({ type: 'settled', run: runId }));
       },
       terminate: () => {
         void worker.terminate();

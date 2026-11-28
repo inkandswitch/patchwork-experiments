@@ -398,7 +398,9 @@ its socket. The host joins its Repo to the pool's worker, and to each run worker
 MessageChannel each (a worker_threads one for each Node thread): its end is the MessageChannel
 network adapter of the site's import map, added to the host's Repo as core adds its public reader,
 and the other is the worker Repo's. A pool is started only from a site Repo, so a browser pool
-always has its pipe. A run worker's pipe is taken out when that run worker ends, and every pipe of
+always has its pipe. A job goes to its run worker with the task's document as the pool has it saved
+(null where the pool cannot export it, and the worker then finds it through its pipe), and the worker
+imports it before the code runs. A run worker's pipe is taken out when that run worker ends, and every pipe of
 a pool when its worker ends. The host's Repo offers a worker's Repo none of its documents (its
 share setting `announce` is false for a peer whose id starts with `task-worker-`; by default a new
 peer is sent every document the Repo has open), and gives it what it asks for, as the Repo's own
