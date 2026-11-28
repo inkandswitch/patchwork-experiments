@@ -7,7 +7,7 @@
 import * as A from '@automerge/automerge';
 import { initSubduction, parseAutomergeUrl, Repo, stringifyAutomergeUrl, type AutomergeUrl, type DocHandle } from '@automerge/automerge-repo';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { OWN_QUEUE_TITLE, POOL_ID_KEY, QUEUE_DATATYPE_ID, TASKS_STORAGE_ID, doWork, markOf, ownQueueOf, sparesOf } from './task-client.js';
+import { OWN_QUEUE_TITLE, POOL_ID_KEY, QUEUE_DATATYPE_ID, TASKS_STORAGE_ID, doWork, ownQueueOf } from './task-client.js';
 import type { Queue } from './task-rules.js';
 
 await initSubduction();
@@ -47,11 +47,11 @@ async function turns(n = 5) {
   }
 }
 
-/** Every task listed on any queue the storage names. */
+/** Every task listed on the queue the storage names as own. */
 function listed(repo: Repo, storage: DocHandle<any> | undefined) {
   const doc = storage?.doc();
   if (!doc) return [];
-  const urls = [...new Set([ownQueueOf(doc), ...sparesOf(doc)].filter(Boolean) as string[])];
+  const urls = [...new Set([ownQueueOf(doc)].filter(Boolean) as string[])];
   return urls.flatMap((url) => Object.keys((repo.handles[parseAutomergeUrl(url as AutomergeUrl).documentId] as any)?.doc()?.jobs ?? {}));
 }
 
@@ -101,7 +101,6 @@ describe('the pool id is made only once the queue is had', () => {
     const own = repo.create<Queue>({ '@patchwork': { type: QUEUE_DATATYPE_ID }, title: OWN_QUEUE_TITLE, jobs: {} } as any);
     storage.change((doc: any) => {
       doc.own = own.url;
-      doc[markOf(own.url)] = true;
       doc[own.url] = true;
     });
     const local = storageOf({}, { refuse: true });
@@ -122,7 +121,6 @@ describe('the pool id is made only once the queue is had', () => {
     const own = repo.create<Queue>({ '@patchwork': { type: QUEUE_DATATYPE_ID }, title: OWN_QUEUE_TITLE, jobs: {} } as any);
     storage.change((doc: any) => {
       doc.own = own.url;
-      doc[markOf(own.url)] = true;
       doc[own.url] = true;
     });
     const local = storageOf({});

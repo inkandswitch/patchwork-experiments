@@ -233,12 +233,12 @@ try {
       const storage = storageUrl ? (await window.repo.find(storageUrl)).doc() : null;
       const queueUrl = storage ? C.ownQueueOf(storage) : null;
       window.__probe = { queueUrl, storageUrl };
-      return { queueUrl, storageUrl, served: C.servedOf(storage), marks: C.marksOf(storage), badge: document.querySelector('#probe-badge .task-titlebar-list')?.textContent ?? null, problem: document.querySelector('#probe-badge [role="alert"]')?.textContent ?? null };
+      return { queueUrl, storageUrl, served: C.servedOf(storage), badge: document.querySelector('#probe-badge .task-titlebar-list')?.textContent ?? null, problem: document.querySelector('#probe-badge [role="alert"]')?.textContent ?? null };
     })()`);
     Object.assign(report, setup, { madeAfterMs });
     check(
       "under the site's provider, own exists within 30 s, its url key is true, and the pool serves it",
-      !!made && /^automerge:/.test(setup.storageUrl ?? "") && setup.served?.[setup.queueUrl] === true && setup.marks.includes(setup.queueUrl) && !!serving && setup.problem === null,
+      !!made && /^automerge:/.test(setup.storageUrl ?? "") && setup.served?.[setup.queueUrl] === true && !!serving && setup.problem === null,
       { made, madeAfterMs, serving: !!serving, ...setup },
     );
   });

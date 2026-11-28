@@ -290,7 +290,7 @@ for (const file of readdirSync(join(root, "dist-newer/assets"))) {
   const text = readFileSync(path, "utf8");
   // BUILD, just before POOL_LOCK, as the bundler lays them out: one
   // declaration (`const a = 1…, b = "…"`) or two assignments (`a = 1…; b = "…"`)
-  const found = text.match(/(\w+) = (\d{13})([,;]\s*)(\w+) = "patchwork-tasks-pool"/);
+  const found = text.match(/([\w$]+) = (\d{13})([,;]\s*)([\w$]+) = "patchwork-tasks-pool"/);
   if (found) {
     stamp = Number(found[2]);
     writeFileSync(path, text.replace(found[0], `${found[1]} = ${stamp + 60_000}${found[3]}${found[4]} = "patchwork-tasks-pool"`));
@@ -888,7 +888,7 @@ try {
   // 18 (first, while the account is fresh). An account that names no task
   // storage: the badge and the background component, as they mount, make
   // the person's own queue without anything pressed (through the provider,
-  // which makes the storage), mark it and serve it, and the pool starts for
+  // which makes the storage), name it and serve it, and the pool starts for
   // it; a task asked of ownQueue() runs. Then the probe's queue is joined
   // through the queue browser's Join, which checks 1 to 17 ask, and a task
   // asked of it before the join, which waited, runs.
@@ -908,8 +908,8 @@ try {
     const afterJoin = await A.js(`probe.last(${J(waitingKey)})`);
     const keys = Object.keys(storageAfter ?? {}).sort();
     check(
-      "18 a fresh account: the badge and the background component make own with nothing pressed, mark it and serve it, and the pool starts for it; a task asked of ownQueue() runs; Join serves the probe's queue and its waiting task runs",
-      typeof own === "string" && J(keys) === J(["@patchwork", own, "own", `own:${own}`].sort()) && storageAfter[own] === true && storageAfter[`own:${own}`] === true &&
+      "18 a fresh account: the badge and the background component make own with nothing pressed, name it and serve it, and the pool starts for it; a task asked of ownQueue() runs; Join serves the probe's queue and its waiting task runs",
+      typeof own === "string" && J(keys) === J(["@patchwork", own, "own"].sort()) && storageAfter[own] === true &&
         !!said && !/Make my queue|No task queues/.test(said) && offers === 0 && !!running &&
         heard.length === 0 && waited.state === "waiting" && waited.runs.length === 0 &&
         ownRun.url === own && ownRun.result === 1 && asked.length >= 1 && asked.every((id) => id === "tasks-next") &&

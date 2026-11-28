@@ -9,21 +9,19 @@
  *
  * It also holds how the task system's messages travel (`send`, `listen`),
  * because hearing them is half of following a task; and, for a page, where
- * a person's list of served queues and their own queue are kept, made and
- * folded (`ownQueue`, `tasksStorage`, `fold`), and how a tool there has work
+ * a person's list of served queues and their own queue are kept, made
+ * (`ownQueue`, `tasksStorage`), and how a tool there has work
  * done and follows and stops it (`doWork`, `watchWork`, `stopWork`).
  */
 
 import {
   LAPSE_MS,
   MAX_LOG_LINES,
-  NOT_HAD,
   checkKey,
   checkNeeds,
   delistTask,
   endingRun,
   entryAt,
-  foldStep,
   Hearing,
   isFinished,
   isWanted,
@@ -709,29 +707,24 @@ export function served(repo, queueUrl, onChange, options = {}) {
 // makes nothing.
 //
 // The storage document's root is the list. A served queue is a root key that
-// is the queue's url, holding `true`; `own` is a root key holding
-// a url; and `own:<queueUrl>`, holding `true`, marks a queue made to be one's
-// own. Nothing in it is a container a writer has to make first: the root is
-// there from the moment the provider makes the document. So writes to
-// different queues never meet, whatever the order or timing; writes to one
-// queue's key keep one value, whole (Automerge keeps a value written
-// alongside a delete it did not see, so a join outlasts a
-// leave made at the same moment). Keys that are not queue urls (the
-// provider's `@patchwork`, `own`, the marks) are never read as queues.
+// is the queue's url, holding `true`; `own` is a root key holding the url of
+// the person's own queue, which is also served. Nothing in it is a container
+// a writer has to make first: the root is there from the moment the provider
+// makes the document. So writes to different queues never meet, whatever the
+// order or timing; writes to one queue's key keep one value, whole (Automerge
+// keeps a value written alongside a delete it did not see, so a join outlasts
+// a leave made at the same moment). Keys that are not queue urls (the
+// provider's `@patchwork`, `own`) are never read as queues.
 //
-// Own. `own` is written only by a making that sees none, in one change with
-// the new queue's mark and its url key (serving it for any code), and
-// nothing ever deletes or rewrites `own` or a mark. So every write of `own`
-// is concurrent with every other, and the one that stands is Automerge's
-// winner among them, the same on every replica that has the same changes;
-// a replica that has a mark has the write of `own` made with it, so the own
-// it reads is never one that loses to a mark it has. A making that sees a
-// pointer to a queue whose document this Repo does not have makes a queue
-// of its own, with its mark and url key and no pointer, and uses that until
-// own's document comes. Every marked queue that is not own is a SPARE: it
-// stays served by its url key, so what it lists runs whether or not it has
-// been folded, and `fold` moves what it lists into own (FOLDING in
-// task-rules.js).
+// Own is made once, with the storage document: the first `ownQueue` that
+// finds none makes the queue and writes `own` and the queue's key in one
+// change, and nothing rewrites `own` after.
+//
+// One gap is accepted. Two first uses that have not yet met (two devices or
+// tabs, offline from each other) each make a storage document, or each make
+// an own queue: one wins on every replica, and what was written into the
+// other is not seen. It is an open problem for the Automerge team (the
+// write-up "Concurrent First Creation"); nothing here repairs it.
 
 /** The tool id the task system's storage is kept under on an account (`account.toolStorage[TASKS_STORAGE_ID]`). */
 export const TASKS_STORAGE_ID = 'tasks-next';
@@ -747,10 +740,9 @@ export const PROVIDER_WAIT_MS = 5_000;
 
 /**
  * The task system's storage document: each served queue's url as a key of
- * its own, holding `true`, `own`, and a mark `own:<queueUrl>` for each
- * queue made to be one's own. Write it only through `setServed`, `ownQueue`
- * and `mergeStorages` (helpers.ts); read it through `servedOf`, `ownQueueOf`,
- * `marksOf` and `sparesOf`.
+ * its own, holding `true`, and `own`, the url of the person's own queue.
+ * Write it only through `setServed` and `ownQueue`; read it through
+ * `servedOf` and `ownQueueOf`.
  * @typedef {{ own?: string, [key: string]: unknown }} TasksStorage
  */
 
@@ -797,42 +789,6 @@ export function servedOf(storage) {
 export function ownQueueOf(storage) {
   const own = storage && typeof storage === 'object' && Object.hasOwn(storage, 'own') ? /** @type {any} */ (storage).own : null;
   return isQueueKey(own) ? own : null;
-}
-
-const MARK = 'own:';
-
-/**
- * The key that marks a queue as made to be one's own: `own:<queueUrl>`.
- * @param {string} queueUrl
- */
-export const markOf = (queueUrl) => `${MARK}${queueUrl}`;
-
-/**
- * The queues a storage document marks as made to be one's own, in the order
- * of their urls: each key `own:<queueUrl>` of the document's own that holds
- * `true` and names a queue url. None for a document that is not there.
- * @param {unknown} storage
- * @returns {string[]}
- */
-export function marksOf(storage) {
-  if (!storage || typeof storage !== 'object') {
-    return [];
-  }
-  return Object.keys(storage)
-    .filter((key) => key.startsWith(MARK) && /** @type {any} */ (storage)[key] === true && isQueueKey(key.slice(MARK.length)))
-    .map((key) => key.slice(MARK.length))
-    .sort();
-}
-
-/**
- * The spares a storage document has: every marked queue but own, in the
- * order of their urls. Each stays served by its own key, and is folded into own.
- * @param {unknown} storage
- * @returns {string[]}
- */
-export function sparesOf(storage) {
-  const own = ownQueueOf(storage);
-  return marksOf(storage).filter((url) => url !== own);
 }
 
 /**
@@ -985,72 +941,15 @@ function findHere(repo, url) {
 }
 
 /**
- * How long this Repo's own storage is waited on, once HERE_MS has passed, for
- * a document it is still reading: a document kept here but slow to load (a
- * cold start) is not taken as not here. Storage that has not answered by then
- * is taken as not having it.
+ * How long a new queue is given to be saved in this Repo's storage before it
+ * is named all the same.
  */
 const LOAD_MS = 30_000;
 
 /**
- * The handle on a document this Repo keeps: as `findHere`, except that a
- * document this Repo's storage is still reading when HERE_MS has passed is
- * waited for until the storage answers (no longer than LOAD_MS). So null
- * means that this Repo's storage does not have it, not only that loading it
- * is slow. A Repo that does not say what its storage is doing (one that keeps
- * nothing, or reports no `storage` source on `findWithProgress`) is given
- * HERE_MS, as `findHere` gives it. Nothing here waits on the network.
- * @param {any} repo
- * @param {string} url
- * @returns {Promise<any | null>}
- */
-async function findKept(repo, url) {
-  const handle = await findHere(repo, url);
-  if (handle) {
-    return handle;
-  }
-  /** @type {any} */
-  let query = null;
-  try {
-    query = repo.findWithProgress?.(url) ?? null;
-  } catch {
-    query = null;
-  }
-  if (typeof query?.peek !== 'function' || typeof query?.subscribe !== 'function') {
-    return null;
-  }
-  return new Promise((resolve) => {
-    let answered = false;
-    /** @type {() => void} */
-    let unsubscribe = () => {};
-    /** @type {ReturnType<typeof setTimeout> | undefined} */
-    let timer;
-    const answer = (/** @type {any} */ found) => {
-      if (answered) {
-        return;
-      }
-      answered = true;
-      clearTimeout(timer);
-      unsubscribe();
-      resolve(found);
-    };
-    const look = (/** @type {any} */ state) => {
-      if (state?.state === 'ready') {
-        answer(state.handle?.doc?.() ? state.handle : null);
-      } else if (state?.sources?.storage !== 'pending') {
-        answer(null);
-      }
-    };
-    timer = setTimeout(() => answer(null), LOAD_MS);
-    unsubscribe = query.subscribe(look);
-    look(query.peek());
-  });
-}
-
-/**
  * A new queue of one's own in `repo`, saved there before anything names it,
  * unless this Repo's storage has not answered within LOAD_MS: it is named
- * then all the same, as a storage that answers nothing keeps nothing anyway.
+ * then all the same.
  * @param {any} repo
  */
 async function newOwnQueue(repo) {
@@ -1068,53 +967,36 @@ async function newOwnQueue(repo) {
 }
 
 /**
- * The makings going on in this copy of the client, by Repo and storage
- * document: one at a time for each, and whoever asks meanwhile shares it.
+ * The makings going on in this page, by Repo and storage document: one at a
+ * time for each, and whoever asks meanwhile shares it. Several things in one
+ * page ask for own together (the badge, the pool's component, a tool asking
+ * for work); without this each would make a queue and all but one be left
+ * unnamed. This is within one page; it repairs nothing between peers.
  * @type {WeakMap<object, Map<string, Promise<string>>>}
  */
 const makings = new WeakMap();
 
 /**
- * The url of a queue of this person's own that this Repo holds: own, made
- * the first time anything asks for it. Nobody presses anything: a page
- * asking for work, the pool's background component and the badge all ask.
- * `repo` is the Repo the page's account is in; the queue is made there too.
- * `element` is where to ask the frame for the task storage when the account
- * names none yet (see `tasksStorage`, whose rejections are the only ones
- * this passes on: no account open, or nowhere to keep the storage).
+ * The url of the person's own queue: the one their storage document names
+ * under `own`, made the first time anything asks for it. Nobody presses
+ * anything: a page asking for work, the pool's background component and the
+ * badge all ask. `repo` is the Repo the page's account is in; the queue is
+ * made there too. `element` is where to ask the frame for the task storage
+ * when the account names none yet (see `tasksStorage`, whose rejections are
+ * the only ones this passes on: no account open, or nowhere to keep the
+ * storage).
  *
- * With no `own`, it makes a queue and, in one change, writes `own`, the
- * queue's mark and its url key (serving it for any code), unless the change
- * finds an `own` there already, written meanwhile by another copy of this
- * client on the same Repo, or arrived from another replica as this one saved
- * its queue: then it writes nothing, and the queue it made is named, served
- * and asked by nothing, unless it is needed as the spare below. With an
- * `own` whose document this Repo has, that is the answer, and so is one its
- * storage is still reading: that is waited for until the storage answers
- * (`findKept`), and makes nothing. With an `own` whose document it does not
- * have (made on another device, and not yet here), the answer is a spare
- * this Repo holds (had, or being read from its storage), or else a queue
- * made here with its mark and its url key and no pointer, which is folded
- * into own once own's document comes. None of it waits on the network: it
- * writes in this Repo and resolves.
- *
- * Each call also starts a pass that folds every spare into own (`fold`), not
- * waited for; a pass that fails is done again by the next.
+ * If the storage document names an `own`, that is the answer, once its
+ * document is here: a device that has the pointer and not the queue waits for
+ * it as `findWhenThere` waits. If it names none, a queue is made, and `own`
+ * and the queue's url key (serving it) are written in one change. Making
+ * needs no network.
  * @param {any} repo
  * @param {any} [element]
  * @returns {Promise<string>}
  */
 export async function ownQueue(repo, element) {
-  return ownIn(repo, await tasksStorage(repo, element));
-}
-
-/**
- * `ownQueue`, given the storage document's handle.
- * @param {any} repo
- * @param {any} storage
- * @returns {Promise<string>}
- */
-function ownIn(repo, storage) {
+  const storage = await tasksStorage(repo, element);
   let going = makings.get(repo);
   if (!going) {
     makings.set(repo, (going = new Map()));
@@ -1122,7 +1004,7 @@ function ownIn(repo, storage) {
   const mine = going;
   let making = mine.get(storage.url);
   if (!making) {
-    making = settleOwn(repo, storage).finally(() => mine.delete(storage.url));
+    making = ownIn(repo, storage).finally(() => mine.delete(storage.url));
     mine.set(storage.url, making);
   }
   return making;
@@ -1133,187 +1015,20 @@ function ownIn(repo, storage) {
  * @param {any} storage  the storage document's handle
  * @returns {Promise<string>}
  */
-async function settleOwn(repo, storage) {
-  /** A queue made here that the storage does not name: it is made the spare, if one is needed. */
-  let unnamed = null;
+async function ownIn(repo, storage) {
   if (!ownQueueOf(storage.doc())) {
     const queue = await newOwnQueue(repo);
     storage.change((/** @type {TasksStorage} */ doc) => {
       if (ownQueueOf(doc)) {
-        return;
+        return; // named while the queue was being saved
       }
       doc.own = queue.url;
-      doc[markOf(queue.url)] = true;
       setServed(doc, queue.url, true);
     });
-    unnamed = ownQueueOf(storage.doc()) === queue.url ? null : queue;
   }
   const own = /** @type {string} */ (ownQueueOf(storage.doc()));
-  const found = (await findKept(repo, own)) ? own : await spareHere(repo, storage, unnamed);
-  if (sparesOf(storage.doc()).length > 0) {
-    foldSoon(repo, storage);
-  }
-  return found;
-}
-
-/**
- * A spare this Repo holds, or else a new one: a queue with its mark and its
- * url key, and no pointer (the queue `unnamed`, when this making made one
- * that nothing names). The change that marks it first looks at the marks
- * again: a spare marked meanwhile (by another copy of this client on the
- * same Repo, or arrived from another replica) is looked at before anything
- * is written, so two copies asking at once mark one spare, and the queue
- * the second made is left unnamed, as a second making of own leaves its own.
- * @param {any} repo
- * @param {any} storage
- * @param {any} unnamed
- * @returns {Promise<string>}
- */
-async function spareHere(repo, storage, unnamed) {
-  /** The spares looked at already, and not had here. */
-  const seen = new Set();
-  for (;;) {
-    const spares = sparesOf(storage.doc()).filter((url) => !seen.has(url));
-    const held = await Promise.all(spares.map((url) => findKept(repo, url)));
-    const spare = spares.find((_, i) => held[i]);
-    if (spare) {
-      return spare;
-    }
-    for (const url of spares) {
-      seen.add(url);
-    }
-    const queue = (unnamed ??= await newOwnQueue(repo));
-    let marked = false;
-    storage.change((/** @type {TasksStorage} */ doc) => {
-      if (sparesOf(doc).some((url) => !seen.has(url))) {
-        return;
-      }
-      doc[markOf(queue.url)] = true;
-      setServed(doc, queue.url, true);
-      marked = true;
-    });
-    if (marked) {
-      return queue.url;
-    }
-  }
-}
-
-/**
- * The folding passes going on in this copy of the client, by Repo and
- * storage document, each with whether another was asked for meanwhile.
- * @type {WeakMap<object, Map<string, { again: boolean }>>}
- */
-const passes = new WeakMap();
-
-/**
- * Starts a pass that folds every spare into own, unless one is going on for
- * this Repo and storage document: then that one is followed by another.
- * @param {any} repo
- * @param {any} storage
- */
-function foldSoon(repo, storage) {
-  let going = passes.get(repo);
-  if (!going) {
-    passes.set(repo, (going = new Map()));
-  }
-  const mine = going;
-  const pass = mine.get(storage.url);
-  if (pass) {
-    pass.again = true;
-    return;
-  }
-  const state = { again: false };
-  mine.set(storage.url, state);
-  /** @returns {Promise<void>} */
-  const next = () =>
-    fold(repo, storage)
-      .catch(() => {
-        // done again by the next pass
-      })
-      .then(() => {
-        if (state.again) {
-          state.again = false;
-          return next();
-        }
-        mine.delete(storage.url);
-      });
-  void next();
-}
-
-/**
- * One pass of folding (FOLDING in task-rules.js): for each spare the
- * storage document marks, each key it lists, in turn, the step `foldStep`
- * gives. Own is the one the storage names as the pass begins; its document
- * is waited for as `findWhenThere` waits, and a spare whose document this
- * Repo does not hold is left for a later pass. For each key, the task the
- * spare's entry names and, when own's entry names another, that one too are
- * fetched (as `findHere` does: a task not had is NOT_HAD); then, in one
- * synchronous turn, the two entries and the two tasks are read afresh, and
- * the step is applied unless an entry changed meanwhile or the storage names
- * another own by then (a later pass folds into that one).
- *
- * Nothing it does depends on doing it once: two passes at once, on one Repo
- * or on two, apply steps that each leave nothing for the other to do.
- * Resolves when the pass is over; rejects only when own's document never
- * comes.
- * @param {any} repo
- * @param {any} storage  the storage document's handle
- * @returns {Promise<void>}
- */
-export async function fold(repo, storage) {
-  const own = ownQueueOf(storage.doc());
-  if (!own || sparesOf(storage.doc()).length === 0) {
-    return;
-  }
-  const into = await findWhenThere(repo, own);
-  for (const spare of sparesOf(storage.doc())) {
-    if (ownQueueOf(storage.doc()) !== own) {
-      return;
-    }
-    const from = await findHere(repo, spare);
-    if (from) {
-      await foldQueue(repo, storage, own, from, into);
-    }
-  }
-}
-
-/** Whether two entries read at two moments are the same. */
-const sameEntry = (/** @type {unknown} */ a, /** @type {unknown} */ b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-
-/**
- * @param {any} repo
- * @param {any} storage
- * @param {string} own
- * @param {any} from  the spare's handle
- * @param {any} into  own's handle
- */
-async function foldQueue(repo, storage, own, from, into) {
-  for (const key of Object.keys(from.doc()?.jobs ?? {})) {
-    const spareEntry = entryAt(from.doc(), key);
-    if (!spareEntry) {
-      continue;
-    }
-    const ownEntry = entryAt(into.doc(), key);
-    const other = ownEntry && ownEntry.taskUrl !== spareEntry.taskUrl ? ownEntry.taskUrl : null;
-    const [task, otherTask] = await Promise.all([findHere(repo, spareEntry.taskUrl), other ? findHere(repo, other) : null]);
-    // From here to the change, one synchronous turn.
-    if (ownQueueOf(storage.doc()) !== own) {
-      return;
-    }
-    const p = entryAt(from.doc(), key);
-    const o = entryAt(into.doc(), key);
-    if (!sameEntry(p, spareEntry) || !sameEntry(o, ownEntry)) {
-      continue;
-    }
-    const step = foldStep(p, task?.doc() ?? NOT_HAD, o, other ? (otherTask?.doc() ?? NOT_HAD) : NOT_HAD);
-    if (step === 'drop') {
-      from.change((/** @type {Queue} */ doc) => delistTask(doc, key, /** @type {any} */ (p).taskUrl));
-    } else if (step === 'adopt') {
-      from.change((/** @type {Queue} */ doc) => listTask(doc, key, /** @type {any} */ (o), /** @type {any} */ (p).taskUrl));
-    } else if (step === 'list') {
-      into.change((/** @type {Queue} */ doc) => listTask(doc, key, /** @type {any} */ (p), o?.taskUrl));
-    }
-  }
+  await findWhenThere(repo, own);
+  return own;
 }
 
 // Finding a document that may not have arrived
@@ -1437,10 +1152,9 @@ function poolIdsKeptHere() {
 }
 
 /**
- * The person's queues this Repo holds now: own and every spare, of those the
- * storage document marks, whose documents it has (as `findHere` has them).
- * None with no account open, no storage, or a storage document not had.
- * Only reads.
+ * The person's own queue, if this Repo holds its document now (as `findHere`
+ * has it): none with no account open, no storage, no own, or a document not
+ * had. Only reads.
  * @param {any} repo
  * @returns {Promise<string[]>}
  */
@@ -1451,9 +1165,7 @@ async function queuesHere(repo) {
     return [];
   }
   const own = ownQueueOf(storage.doc());
-  const urls = [...(own ? [own] : []), ...sparesOf(storage.doc())];
-  const held = await Promise.all(urls.map((url) => findHere(repo, url)));
-  return urls.filter((_, i) => held[i]);
+  return own && (await findHere(repo, own)) ? [own] : [];
 }
 
 /** The id of the tasks package's background component, which puts a page in its browser's pool. */
@@ -1592,17 +1304,13 @@ function unlessStopped(promise, signal) {
 /**
  * Calls `onChange` with the work under `key` as this page can know it, now
  * and whenever that changes: the task under the key on the person's queues,
- * as `watch` gives it. It follows own and every spare the storage marks; the
- * view reported is own's when the key names a task there, and otherwise the
- * first spare's, in the order of their urls, that names one (a spare is
- * where work was asked while own's document was not here). The account's
- * pointer to the task system's storage, that document, its `own` and its
- * marks are followed as they change. Watching makes nothing.
+ * as `watch` gives it. It follows own: the account's pointer to the task
+ * system's storage, that document and its `own` are followed as they change.
+ * Watching makes nothing.
  *
  * Its state is `missing` when no work under this key is known on a queue of
  * this person's: no account is open, it has no storage, the storage names no
- * own, the key names nothing on own nor on any spare heard from within
- * HERE_MS of own, or own's document has not been had. It always reports
+ * own, the key names nothing on own, or own's document has not been had. It always reports
  * promptly: what cannot be told at once (no account, no storage, no own) is
  * reported at once, and own's document not had within LAPSE_MS is reported
  * `missing` and looked for still, its work reported when it comes. When the
@@ -1631,7 +1339,6 @@ export function watchWork(repo, key, onChange) {
   const followed = new Map();
   /** @type {ReturnType<typeof setTimeout> | undefined} */ let retry;
   /** @type {ReturnType<typeof setTimeout> | undefined} */ let lapse;
-  /** @type {ReturnType<typeof setTimeout> | undefined} */ let soon;
   // Where the last report came from: null before any report, NONE when it
   // was a `missing` made here, else the followed entry whose view it was.
   const NONE = {};
@@ -1643,9 +1350,7 @@ export function watchWork(repo, key, onChange) {
   /** @param {TaskView} view */
   const report = (view) => {
     clearTimeout(lapse);
-    clearTimeout(soon);
     lapse = undefined;
-    soon = undefined;
     if (view.state === 'missing' && lastMissing) {
       return;
     }
@@ -1680,21 +1385,14 @@ export function watchWork(repo, key, onChange) {
       }
     }
     lastView = null;
-    const pending = order.some((url) => !followed.get(url)?.view);
     if (!storageUrl || (storage && !own)) {
       missing();
     } else if (said !== null && said !== NONE && ![...followed.values()].includes(/** @type {any} */ (said))) {
       // What was reported came from a queue no longer followed: withdrawn now.
       missing();
     } else if (own && followed.get(own)?.view) {
-      // Own names nothing under the key. A spare this Repo holds says so a
-      // moment later (its document is here); one it does not hold never
-      // does, so they are waited for no longer than HERE_MS.
-      if (pending) {
-        soon ??= setTimeout(missing, HERE_MS);
-      } else {
-        missing();
-      }
+      // Own names nothing under the key.
+      missing();
     } else if (said !== null) {
       missing();
     } else {
@@ -1718,7 +1416,7 @@ export function watchWork(repo, key, onChange) {
       }
     }
     own = storage ? ownQueueOf(storage.doc()) : null;
-    order = storage ? [...(own ? [own] : []), ...sparesOf(storage.doc())] : [];
+    order = own ? [own] : [];
     for (const [url, entry] of followed) {
       if (!order.includes(url)) {
         entry.unwatch();
@@ -1768,7 +1466,6 @@ export function watchWork(repo, key, onChange) {
     stopped = true;
     clearTimeout(retry);
     clearTimeout(lapse);
-    clearTimeout(soon);
     account?.off?.('change', look);
     storage?.off('change', look);
     for (const entry of followed.values()) {
@@ -1780,7 +1477,7 @@ export function watchWork(repo, key, onChange) {
 
 /**
  * Stops the work under `key` on the person's queues, as `cancel` does: on
- * own and on every spare whose document this Repo holds (see `queuesHere`).
+ * own, if this Repo holds its document (see `queuesHere`).
  * True if any task was stopped; false when there is none to stop: no queue
  * of theirs here, nothing under the key, or tasks that had ended already.
  * @param {any} repo  the Repo the page's account is in

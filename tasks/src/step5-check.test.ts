@@ -20,11 +20,8 @@ import {
   QUEUE_DATATYPE_ID,
   TASKS_STORAGE_ID,
   doWork,
-  markOf,
   ownQueueOf,
   send,
-  sparesOf,
-  storageUrlOf,
   type TaskView,
 } from './task-client.js';
 import { Pool, type Docs, type Ears, type Executor, type Job, type RunWorker, type WorkerEvents } from './pool';
@@ -96,7 +93,7 @@ async function until(done: () => boolean, limit: number, step = 100) {
   return done();
 }
 
-type Account = 'none' | 'own here' | 'no own yet' | 'own elsewhere' | 'storage not here';
+type Account = 'none' | 'own here' | 'no own yet' | 'storage not here';
 type PoolId = 'kept' | 'none yet' | 'no localStorage';
 
 /** A page whose person has `account`, in `repo`. */
@@ -117,15 +114,7 @@ function pageOf(repo: Repo, account: Account) {
     const url = own.url;
     storage.change((doc) => {
       doc.own = url;
-      doc[markOf(url)] = true;
       doc[url] = true;
-    });
-  } else if (account === 'own elsewhere') {
-    const away = madeUp(42);
-    storage.change((doc) => {
-      doc.own = away;
-      doc[markOf(away)] = true;
-      doc[away] = true;
     });
   }
   return { own, storage };
@@ -139,11 +128,11 @@ const written = (repo: Repo) =>
       .filter(([, heads]) => heads.length > 0),
   );
 
-/** Every queue the storage marks or names, as this Repo has it, with what it lists. */
+/** Every queue the storage names as own, as this Repo has it, with what it lists. */
 function queuesListed(repo: Repo, storage: DocHandle<any> | undefined) {
   if (!storage?.doc()) return [];
   const doc = storage.doc();
-  const urls = [...new Set([ownQueueOf(doc), ...sparesOf(doc)].filter(Boolean) as string[])];
+  const urls = [...new Set([ownQueueOf(doc)].filter(Boolean) as string[])];
   return urls.flatMap((url) => {
     const handle = handleOf<Queue>(repo, url);
     const jobs = handle?.doc()?.jobs ?? {};
@@ -161,7 +150,7 @@ describe('(a) no combination has doWork import the code in the page', () => {
 
   beforeEach(fake);
   const CODES = { 'data: (travels)': COUNTED_DATA, 'a package file (travels)': IN_PACKAGE, 'file: (cannot travel)': COUNTED_FILE, 'http://localhost (cannot travel)': LOCALHOST } as const;
-  const ACCOUNTS: Account[] = ['none', 'own here', 'no own yet', 'own elsewhere', 'storage not here'];
+  const ACCOUNTS: Account[] = ['none', 'own here', 'no own yet', 'storage not here'];
   const POOL_IDS: PoolId[] = ['kept', 'none yet', 'no localStorage'];
   const NEEDS = [[], ['node'], ['pool:somebody-else']];
   const HEARD = [false, true];
@@ -211,9 +200,8 @@ describe('(a) no combination has doWork import the code in the page', () => {
                 const listed = queuesListed(repo, storage);
                 expect(listed).toHaveLength(1);
                 const { entry, queue } = listed[0];
-                // asked of own when own is here; of a spare made here when own's document is not
+                // asked of own: the one that is here, or the one made here
                 if (account === 'own here') expect(queue).toBe(own!.url);
-                else if (account === 'own elsewhere') expect(sparesOf(storage!.doc())).toContain(queue);
                 else expect(queue).toBe(ownQueueOf(storage!.doc()));
                 const id = local?.items[POOL_ID_KEY] ?? null;
                 if (travels) {
@@ -232,7 +220,7 @@ describe('(a) no combination has doWork import the code in the page', () => {
               });
             }
   it(`counts: ${cases} cases`, () => {
-    expect(cases).toBe(2 * 4 * 5 * 3 * 3 * 2);
+    expect(cases).toBe(2 * 4 * 4 * 3 * 3 * 2);
   });
 });
 
@@ -277,7 +265,7 @@ describe('(b) doWork waits on no pool and no network: wall time until the task i
     ["the site's Repo with no network adapter", () => new SiteRepo({ network: [] } as any) as unknown as Repo],
   ];
   for (const [name, makeRepo] of CASES) {
-    for (const account of ['own here', 'no own yet', 'own elsewhere'] as Account[]) {
+    for (const account of ['own here', 'no own yet'] as Account[]) {
       it(`${name}, account ${account}`, async () => {
         const repo = makeRepo();
         g.localStorage = localStorageOf({ [POOL_ID_KEY]: 'this-browser' });
@@ -293,8 +281,8 @@ describe('(b) doWork waits on no pool and no network: wall time until the task i
         await done;
         console.log(`(b) ${name}, ${account}: listed after ${took.toFixed(0)} ms`);
         expect(queuesListed(repo, storage).length).toBe(0); // the abort took it off again
-        // own here or made here: nothing to wait for. Own elsewhere: findKept gives own's document HERE_MS (1 s) to come from this Repo's storage.
-        expect(took).toBeLessThan(account === 'own elsewhere' ? 1_500 : 300);
+        // own here or made here: nothing to wait for.
+        expect(took).toBeLessThan(300);
       });
     }
   }
@@ -428,8 +416,8 @@ describe('(e) cancelling at every stage leaves nothing listed as waiting', () =>
     expect(wanted(repo)).toEqual([]);
   });
 
-  it('while it waits (no pool), on own and on a spare', async () => {
-    for (const account of ['own here', 'own elsewhere'] as Account[]) {
+  it('while it waits (no pool), on own', async () => {
+    for (const account of ['own here', 'no own yet'] as Account[]) {
       const repo = newRepo();
       const { storage } = pageOf(repo, account);
       const controller = new AbortController();

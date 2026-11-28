@@ -1,16 +1,18 @@
 // @vitest-environment node
 //
 // Own's queue document kept in this browser's storage, but slow to load (a
-// cold start): `ownQueue` waits for the read and makes nothing, where a
-// document the storage does not have is still answered with a spare at once.
+// cold start): `ownQueue` waits for the read and makes nothing. A document
+// the storage does not have is waited for too, and nothing is made in its
+// place.
 // Every Repo here keeps its documents in a storage adapter of the test's own,
 // whose reads take as long as the test says, and has no network. Time is
 // vitest's fake clock.
 
+import * as A from '@automerge/automerge';
 import { initSubduction, Repo, type StorageAdapterInterface } from '@automerge/automerge-repo';
 import { Repo as SiteRepo, initSubduction as initSiteSubduction } from 'site-automerge-repo';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HERE_MS, OWN_QUEUE_TITLE, QUEUE_DATATYPE_ID, TASKS_STORAGE_ID, markOf, marksOf, ownQueue, sparesOf } from './task-client.js';
+import { HERE_MS, OWN_QUEUE_TITLE, QUEUE_DATATYPE_ID, TASKS_STORAGE_ID, ownQueue } from './task-client.js';
 
 await initSubduction();
 await initSiteSubduction();
@@ -89,7 +91,7 @@ async function reopened(makeRepo: (storage: StorageAdapterInterface) => Repo, re
   }
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
   const repo = makeRepo(storageOn(kept, readMs));
-  const storage = repo.create<any>({ own: own.url, [markOf(own.url)]: true, [own.url]: true });
+  const storage = repo.create<any>({ own: own.url, [own.url]: true });
   g.accountDocHandle = repo.create<any>({ toolStorage: { [TASKS_STORAGE_ID]: storage.url } });
   return { repo, own, storage };
 }
@@ -97,34 +99,29 @@ async function reopened(makeRepo: (storage: StorageAdapterInterface) => Repo, re
 describe("own's document in this browser's storage, slow to load", () => {
   for (const [name, makeRepo] of Object.entries(REPOS)) {
     for (const readMs of [HERE_MS / 2, 3 * HERE_MS, 10 * HERE_MS]) {
-      it(`${name}: each read taking ${readMs} ms: ownQueue gives own once it is read, and marks nothing`, async () => {
+      it(`${name}: each read taking ${readMs} ms: ownQueue gives own once it is read, and writes nothing`, async () => {
         const { repo, own, storage } = await reopened(makeRepo, readMs);
-        const marks = marksOf(storage.doc());
+        const heads = A.getHeads(storage.doc());
         const asked = settling(ownQueue(repo));
         const took = await timeUntil(asked.done, 120_000);
         console.log(`${name}, each read ${readMs} ms: own given after ${took} ms`);
         expect(asked.settled.value).toBe(own.url);
-        expect(marksOf(storage.doc())).toEqual(marks);
-        expect(sparesOf(storage.doc())).toEqual([]);
+        expect(A.getHeads(storage.doc())).toEqual(heads);
       });
     }
 
-    it(`${name}: not in this browser's storage: ownQueue gives a spare made here, as soon as the storage says so`, async () => {
-      const { repo, own, storage } = await reopened(makeRepo, 0, false);
-      const asked = settling(ownQueue(repo));
-      const took = await timeUntil(asked.done, 120_000);
-      expect(asked.settled.value).not.toBe(own.url);
-      expect(sparesOf(storage.doc())).toEqual([asked.settled.value]);
-      expect(took).toBeLessThanOrEqual(2 * HERE_MS + 200);
-    });
-
-    it(`${name}: storage that never answers: ownQueue still settles, with a spare, rather than wait for ever`, async () => {
-      const { repo, own, storage } = await reopened(makeRepo, Infinity);
-      const asked = settling(ownQueue(repo));
-      const took = await timeUntil(asked.done, 300_000, 1_000);
-      expect(took).toBeLessThan(Infinity);
-      expect(asked.settled.value).not.toBe(own.url);
-      expect(sparesOf(storage.doc())).toEqual([asked.settled.value]);
-    });
+    for (const [what, keepOwn, readMs] of [
+      ["not in this browser's storage", false, 0],
+      ['storage that never answers', true, Infinity],
+    ] as const) {
+      it(`${name}: ${what}: ownQueue waits for own's document, and makes and writes nothing meanwhile`, async () => {
+        const { repo, storage } = await reopened(makeRepo, readMs, keepOwn);
+        const heads = A.getHeads(storage.doc());
+        const asked = settling(ownQueue(repo));
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(asked.done()).toBe(false);
+        expect(A.getHeads(storage.doc())).toEqual(heads);
+      });
+    }
   }
 });

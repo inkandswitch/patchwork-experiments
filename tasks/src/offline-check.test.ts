@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// A checker's tests of step 4 (own, folding, asking is joining), read with
+// A checker's tests of step 4 (own, asking is joining), read with
 // the law: nothing a browser can do alone waits on the sync server. Every
 // Repo here has no network at all; replicas meet only when a test merges
 // their documents by hand. Time is vitest's fake clock.
@@ -9,26 +9,18 @@ import * as A from '@automerge/automerge';
 import { initSubduction, parseAutomergeUrl, Repo, stringifyAutomergeUrl, type AutomergeUrl, type DocHandle } from '@automerge/automerge-repo';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  HERE_MS,
-  OWN_QUEUE_TITLE,
-  QUEUE_DATATYPE_ID,
   TASKS_STORAGE_ID,
   ask,
   doWork,
-  fold,
-  markOf,
-  marksOf,
   ownQueue,
   ownQueueOf,
   servedOf,
-  sparesOf,
   stopWork,
   storageUrlOf,
   watchWork,
   type TaskView,
 } from './task-client.js';
-import { mergeStorages, storageLosersOf } from './helpers';
-import { LAPSE_MS, allHeard, claimRun, endRun, entryAt, isWanted, mayClaim, named, type Queue, type Task } from './task-rules.js';
+import { claimRun, endRun, entryAt, type Queue, type Task } from './task-rules.js';
 
 await initSubduction();
 
@@ -210,270 +202,37 @@ async function alone(d: ReturnType<typeof devices>, i: number, asked: Asked[]) {
   return own;
 }
 
-/**
- * After every device has every change and passes have run: one own
- * everywhere; under every key anything was asked, own names one wanted task,
- * or the task asked has ended; every spare lists only what own lists, or a
- * task that has ended; every queue that was made is served; and the tasks
- * under the shared key were run by one pool's run that goes on, the others
- * yielding.
- */
-function converged(d: ReturnType<typeof devices>, made: string[], asked: Asked[]) {
-  const storages = d.repos.map((_, i) => d.storageOn(i));
-  const own = ownQueueOf(storages[0].doc())!;
-  expect(made).toContain(own);
-  for (const storage of storages) {
-    expect(ownQueueOf(storage.doc())).toBe(own);
-    expect(marksOf(storage.doc())).toEqual([...new Set(made)].sort());
-    for (const url of made) expect(servedOf(storage.doc())[url], `${url} served`).toBe(true);
-  }
-  const doc = (url: string) => handleOf<any>(d.repos[0], url)!.doc();
-  const ownJobs = (doc(own) as Queue).jobs;
-  for (const { key, taskUrl, ended } of asked) {
-    const task = doc(taskUrl) as Task;
-    if (ended) {
-      expect(isWanted(task), key).toBe(false);
-      continue;
-    }
-    expect(ownJobs[key], `own lists ${key}`).toBeDefined();
-    expect(isWanted(doc(ownJobs[key].taskUrl)), key).toBe(true);
-  }
-  for (const spare of sparesOf(storages[0].doc())) {
-    for (const [key, entry] of Object.entries((doc(spare) as Queue).jobs)) {
-      if (isWanted(doc(entry.taskUrl))) expect(ownJobs[key]?.taskUrl, `spare ${key}`).toBe(entry.taskUrl);
-    }
-  }
-  // the shared key: every queue's entry names the one task own names, so one run goes on and the others yield
-  const kept = ownJobs.shared.taskUrl;
-  for (const url of made) expect((doc(url) as Queue).jobs.shared.taskUrl).toBe(kept);
-  const runsGoingOn = asked
-    .filter((one) => one.key === 'shared')
-    .filter((one) => {
-      const queue = doc(made[one.device]) as Queue;
-      const task = doc(one.taskUrl) as Task;
-      return named(queue, 'shared', one.taskUrl) === 'this' && task.runs.some((run) => run.status == null);
-    });
-  expect(runsGoingOn.map((one) => one.taskUrl)).toEqual([kept]);
-  // a pool that hears the kept task's run, or holds it, does not take it again, on any queue
-  for (const url of made) {
-    expect(mayClaim(doc(kept) as Task, 'another pool', named(doc(url) as Queue, 'shared', kept), allHeard)).toBe(false);
-  }
-  return own;
-}
-
-/** Device `i` runs a pass, as a page or the pool host does after a change. */
-async function pass(d: ReturnType<typeof devices>, i: number) {
-  d.on(i);
-  await outcome(fold(d.repos[i], d.storageOn(i)), HERE_MS);
-}
-
-/** Every order of meeting for `n` devices: a sequence of pairwise meetings that leaves all of them met. */
-function meetings(n: number): [number, number][][] {
-  const pairs: [number, number][] = [];
-  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) pairs.push([i, j]);
-  return permutations(pairs);
-}
-
 describe('devices that never met, each with no network, then meeting in every order (one storage document made before they parted)', () => {
   for (const n of [2, 3]) {
-    it(`${n} devices: each has own at once, a tool's work asked of it and stopped, and a task run alone; met pairwise in every order, with each pair folding as it meets, then all: they agree on own, nothing asked is lost, and the shared key ends with one run going on`, async () => {
+    it(`${n} devices: each makes own at once, a tool's work asked of it and stopped, and a task run alone; met, they agree on own, every queue made stays served, and asked again each gives own and makes nothing`, async () => {
       const owns = new Set<number>();
       for (const actors of permutations(ACTORS.slice(0, n))) {
-        for (const order of meetings(n)) {
-          const d = devices(actors, { shareStorage: true });
-          const asked: Asked[] = [];
-          const made: string[] = [];
-          for (let i = 0; i < n; i++) made.push(await alone(d, i, asked));
-          expect(new Set(made).size).toBe(n);
-          for (const [i, j] of order) {
-            sync([d.repos[i], d.repos[j]]);
-            await pass(d, i);
-            await pass(d, j);
-            sync([d.repos[i], d.repos[j]]);
-          }
-          sync(d.repos);
-          for (let i = 0; i < n; i++) {
-            await pass(d, i);
-            sync(d.repos);
-          }
-          owns.add(made.indexOf(converged(d, made, asked)));
-          // asked again, each device's ownQueue gives own and makes nothing
-          for (let i = 0; i < n; i++) {
-            const { repo, element } = d.on(i);
-            const handles = Object.keys(repo.handles).length;
-            expect((await outcome(ownQueue(repo, element))).value).toBe(ownQueueOf(d.storageOn(i).doc()));
-            expect(Object.keys(repo.handles).length).toBe(handles);
-          }
-          await vi.advanceTimersByTimeAsync(0);
+        const d = devices(actors, { shareStorage: true });
+        const asked: Asked[] = [];
+        const made: string[] = [];
+        for (let i = 0; i < n; i++) made.push(await alone(d, i, asked));
+        expect(new Set(made).size).toBe(n);
+        sync(d.repos);
+        const storages = d.repos.map((_, i) => d.storageOn(i));
+        const own = ownQueueOf(storages[0].doc())!;
+        expect(made).toContain(own);
+        for (const storage of storages) {
+          expect(ownQueueOf(storage.doc())).toBe(own);
+          for (const url of made) expect(servedOf(storage.doc())[url], `${url} served`).toBe(true);
         }
+        owns.add(made.indexOf(own));
+        // asked again, each device's ownQueue gives own and makes nothing
+        for (let i = 0; i < n; i++) {
+          const { repo, element } = d.on(i);
+          const handles = Object.keys(repo.handles).length;
+          expect((await outcome(ownQueue(repo, element))).value).toBe(own);
+          expect(Object.keys(repo.handles).length).toBe(handles);
+        }
+        await vi.advanceTimersByTimeAsync(0);
       }
       expect([...owns].sort()).toEqual([...Array(n).keys()]);
     }, 120_000);
   }
-});
-
-describe('devices that never met, each made its own storage document (no network when their providers made them), then met', () => {
-  for (const n of [2, 3]) {
-    for (const concurrent of [false, true]) {
-      it(`${n} devices; mergeStorages run by each device in every order, ${concurrent ? 'all before they hear of each other’s merge' : 'each after the one before has reached everyone'}, then passes: one storage and one own everywhere, every queue made served in it, nothing asked lost, and a second round changes nothing`, async () => {
-        for (const actors of permutations(ACTORS.slice(0, n))) {
-          for (const order of permutations([...Array(n).keys()])) {
-            const d = devices(actors, { shareStorage: false });
-            const asked: Asked[] = [];
-            const made: string[] = [];
-            for (let i = 0; i < n; i++) made.push(await alone(d, i, asked));
-            const storages = d.repos.map((_, i) => storageUrlOf(d.accounts[i].doc()));
-            expect(new Set(storages).size).toBe(n);
-            sync(d.repos);
-            const winner = storageUrlOf(d.accounts[0].doc());
-            for (let i = 0; i < n; i++) {
-              expect(storageUrlOf(d.accounts[i].doc())).toBe(winner);
-              expect(storageLosersOf(d.accounts[i].doc())).toEqual(storages.filter((url) => url !== winner).sort());
-            }
-            for (const i of order) {
-              d.on(i);
-              await outcome(mergeStorages(d.repos[i], d.accounts[i].doc()), HERE_MS);
-              if (!concurrent) sync(d.repos);
-            }
-            sync(d.repos);
-            for (let i = 0; i < n; i++) {
-              await pass(d, i);
-              sync(d.repos);
-            }
-            converged(d, made, asked);
-            // losers serve nothing more; a second round changes nothing
-            for (const url of storages.filter((one) => one !== winner)) expect(servedOf(handleOf<any>(d.repos[0], url!)!.doc())).toEqual({});
-            const heads = d.repos.map((repo) => Object.values(repo.handles).map((handle) => A.getHeads(handle.doc() as any)));
-            for (const i of order) {
-              d.on(i);
-              await outcome(mergeStorages(d.repos[i], d.accounts[i].doc()), HERE_MS);
-              await pass(d, i);
-            }
-            expect(d.repos.map((repo) => Object.values(repo.handles).map((handle) => A.getHeads(handle.doc() as any)))).toEqual(heads);
-            await vi.advanceTimersByTimeAsync(0);
-          }
-        }
-      }, 120_000);
-    }
-  }
-});
-
-describe('a pass cut off half way', () => {
-  for (const resumes of [true, false]) {
-    it(`device 0 is cut off between two steps of a pass, after its first step reached the others; the others fold without it${resumes ? ', then it finishes its pass on what it had' : ', and it never finishes'}; healed, in every actor order: they converge and nothing is lost`, async () => {
-      for (const actors of permutations(ACTORS)) {
-        const d = devices(actors, { shareStorage: true });
-        const asked: Asked[] = [];
-        const made: string[] = [];
-        for (let i = 0; i < 3; i++) made.push(await alone(d, i, asked));
-        sync(d.repos);
-        // device 0's pass stops at the first task it fetches after it has written a step
-        const taskUrls = new Set(asked.map((one) => one.taskUrl));
-        const repo0 = d.repos[0] as any;
-        const find = repo0.find.bind(repo0);
-        const queueChanges = () => made.reduce((sum, url) => sum + A.getAllChanges(handleOf<any>(d.repos[0], url)!.doc()).length, 0);
-        const changesBefore = queueChanges();
-        let held = false;
-        let release!: () => void;
-        const gate = new Promise<void>((resolve) => (release = resolve));
-        repo0.find = async (url: string, ...rest: unknown[]) => {
-          if (!held && taskUrls.has(url) && queueChanges() > changesBefore) {
-            held = true;
-            await gate;
-          }
-          return find(url, ...rest);
-        };
-        d.on(0);
-        const cut = fold(d.repos[0], d.storageOn(0));
-        for (let i = 0; i < 100 && !held; i++) {
-          await vi.advanceTimersByTimeAsync(0);
-          await new Promise((resolve) => setImmediate(resolve));
-        }
-        expect(held, 'the pass wrote a step and then fetched another task').toBe(true);
-        // what it had done reaches the others; then it is cut off
-        sync(d.repos);
-        // the others fold (no fake time moves, so device 0's fetch stays held) and ask more
-        for (const i of [1, 2]) {
-          d.on(i);
-          await outcome(fold(d.repos[i], d.storageOn(i)));
-          sync([d.repos[1], d.repos[2]]);
-        }
-        d.on(2);
-        asked.push({ ...(await outcome(ask(d.repos[2], made[2], { importUrl: CODE, key: 'late', input: 'late' }))).value!, device: 2, ended: false });
-        if (resumes) {
-          release();
-          d.on(0);
-          await outcome(cut, HERE_MS);
-        }
-        // healed
-        sync(d.repos);
-        for (let i = 0; i < 3; i++) {
-          await pass(d, i);
-          sync(d.repos);
-        }
-        converged(d, made, asked);
-        repo0.find = find;
-        release();
-        await outcome(cut, HERE_MS);
-      }
-    }, 120_000);
-  }
-});
-
-describe('work sitting in a spare', () => {
-  it("own's document not here, work asked of the spare and running: watchWork shows it, then, once own's document comes and a pass lists it in own, shows the same task with no 'missing' between; stopWork stops it once and takes it off both", async () => {
-    const repo = newRepo();
-    const elsewhere = newRepo();
-    const away = elsewhere.create<Queue>({ '@patchwork': { type: QUEUE_DATATYPE_ID }, title: OWN_QUEUE_TITLE, jobs: {} } as any);
-    const storage = repo.create<any>({ own: away.url, [markOf(away.url)]: true, [away.url]: true });
-    const account = repo.create<any>({ toolStorage: { [TASKS_STORAGE_ID]: storage.url } });
-    g.accountDocHandle = account;
-    const spare = (await outcome(ownQueue(repo), HERE_MS)).value!;
-    expect(spare).not.toBe(away.url);
-    const asked = (await outcome(ask(repo, spare, { importUrl: CODE, key: 'k' }))).value!;
-    const task = handleOf<Task>(repo, asked.taskUrl)!;
-    task.change((doc) => claimRun(doc, { id: 'r', pool: 'P', start: Date.now() }));
-    const views: TaskView[] = [];
-    const stop = watchWork(repo, 'k', (view) => views.push(view));
-    await outcome(Promise.resolve(), HERE_MS);
-    expect(views.at(-1)).toMatchObject({ state: 'running', taskUrl: asked.taskUrl });
-    // own's document arrives; a pass lists the spare's task in own
-    const awayHere = replicate(repo, away);
-    await outcome(Promise.resolve(), 10);
-    await outcome(fold(repo, storage), HERE_MS);
-    expect(entryAt(awayHere.doc(), 'k')?.taskUrl).toBe(asked.taskUrl);
-    await outcome(Promise.resolve(), LAPSE_MS);
-    expect(views.map((view) => view.state)).not.toContain('missing');
-    // no pool beats in this test, so the run is stalled by now; it is the same task, followed throughout
-    expect(views.at(-1)).toMatchObject({ state: 'stalled', taskUrl: asked.taskUrl });
-    expect(new Set(views.map((view) => view.taskUrl))).toEqual(new Set([asked.taskUrl]));
-    expect((await outcome(stopWork(repo, 'k'))).value).toBe(true);
-    expect(task.doc()!.runs.filter((run) => run.status === 'cancelled' && !('pool' in run))).toHaveLength(1);
-    expect(entryAt(awayHere.doc(), 'k')).toBeFalsy();
-    expect(entryAt(handleOf<Queue>(repo, spare)!.doc(), 'k')).toBeFalsy();
-    stop();
-  });
-
-  it("own's document not here: each doWork offline asks the one spare made for them, the first within HERE_MS twice, later ones within HERE_MS (the re-look for own), and nothing is run in the page", async () => {
-    const repo = newRepo();
-    const elsewhere = newRepo();
-    const away = elsewhere.create<Queue>({ '@patchwork': { type: QUEUE_DATATYPE_ID }, title: OWN_QUEUE_TITLE, jobs: {} } as any);
-    const storage = repo.create<any>({ own: away.url, [markOf(away.url)]: true, [away.url]: true });
-    g.accountDocHandle = repo.create<any>({ toolStorage: { [TASKS_STORAGE_ID]: storage.url } });
-    let called = 0;
-    g.__work = () => ++called;
-    const listedIn = (key: string) => sparesOf(storage.doc()).some((url) => !!entryAt(handleOf<Queue>(repo, url)?.doc(), key));
-    const times: number[] = [];
-    for (let i = 1; i <= 3; i++) {
-      void doWork(repo, { importUrl: WORK, key: `k${i}` });
-      times.push(await timeUntil(() => listedIn(`k${i}`), 60_000));
-    }
-    expect(times[0]).toBeLessThanOrEqual(2 * HERE_MS + 100);
-    for (const t of times.slice(1)) expect(t).toBeLessThanOrEqual(HERE_MS + 100);
-    expect(sparesOf(storage.doc())).toHaveLength(1);
-    expect(Object.keys(handleOf<Queue>(repo, sparesOf(storage.doc())[0])!.doc()!.jobs).sort()).toEqual(['k1', 'k2', 'k3']);
-    expect(called).toBe(0);
-  });
 });
 
 describe('two tools asking at once', () => {
@@ -512,22 +271,9 @@ describe('two tools asking at once', () => {
     expect(called).toBe(0);
     expect(appended).toHaveLength(1);
     const storage = handleOf<any>(repo, storageUrlOf(account.doc())!)!;
-    expect(marksOf(storage.doc())).toHaveLength(1);
     expect(A.getConflicts(storage.doc(), 'own')).toBeUndefined();
   });
 
-  it("two copies of the client asking at once while own's document is not here: one spare is made, and both are given it", async () => {
-    // @ts-expect-error a second instance of the module
-    const other = (await import('./task-client.js?copy=4')) as typeof import('./task-client.js');
-    const repo = newRepo();
-    const elsewhere = newRepo();
-    const away = elsewhere.create<Queue>({ title: OWN_QUEUE_TITLE, jobs: {} } as any);
-    const storage = repo.create<any>({ own: away.url, [markOf(away.url)]: true, [away.url]: true });
-    g.accountDocHandle = repo.create<any>({ toolStorage: { [TASKS_STORAGE_ID]: storage.url } });
-    const [a, b] = await Promise.all([outcome(ownQueue(repo), HERE_MS * 3), outcome(other.ownQueue(repo), HERE_MS * 3)]);
-    expect(sparesOf(storage.doc())).toHaveLength(1);
-    expect(b.value).toBe(a.value);
-  });
 });
 
 describe('a page with no tool-storage provider', () => {
