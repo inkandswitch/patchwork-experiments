@@ -172,16 +172,9 @@ that one machine serves.
   (`ownQueue`). Queues one only asks of, and does not serve, have no place to be kept: the task
   storage could keep them as root keys of their own whose setting serves nothing, and tools pick
   from those. Waits on the first tool that asks a queue it does not serve.
-- **Forgetting spares.** A spare (a queue made as one's own that another making's pointer beat,
-  or one made where own's document had not arrived) is kept marked and served for good, and each
-  costs one served queue: the pool follows it, and every folding pass reads it. Forgetting one
-  (deleting its mark and its url key) is safe only once no replica can still ask it, which nothing
-  can know yet: a device cut off for a month may come back and ask the spare it made. Waits on a
-  way to know that every replica has folded, or on spares growing enough to matter.
-- **Node hosts following own.** A host serves the queues it was given (`--queue`). Own changes
-  only while concurrent makings meet, but a host given what became a spare keeps serving it, and
-  work needing `node` or `unix` asked through `doWork` waits until the host is given own. Waits on
-  a host that reads account storage.
+- **Node hosts following own.** A host serves the queues it was given (`--queue`), so work needing
+  `node` or `unix` asked through `doWork` waits until the host is given own. Waits on a host that
+  reads account storage.
 - **Two pool ids made at once.** Where no pool has ever started in a profile, two tabs asking at
   the same moment for code that cannot travel can each find no pool id and make one; the later
   write is kept, and the task asked under the other id waits for a pool that will never be. It
@@ -189,8 +182,8 @@ that one machine serves.
   Waits on a case that needs it.
 - **The base provider's storage map made twice.** Patchwork's tool-storage provider writes
   `toolStorage = {}` when its copy of the account has none, so two devices doing so apart keep one
-  map, and every other tool's storage linked in the other is lost from the account. The task
-  system recovers its own (`mergeStorages`); the rest is base's to fix, and was reported.
+  map, and every other tool's storage linked in the other is lost from the account. That is
+  base's to fix, and was reported.
 - **What the pool's registry exposes, for the isolation work.** A pool's workers have the
   plugin registry (README, "A pool has the plugin registry"). So plugin code of every installed
   package can be loaded by any task's code in a pool: in a browser, in a run worker of the site's

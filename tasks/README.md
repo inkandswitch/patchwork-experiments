@@ -238,14 +238,14 @@ site's Repo, and never names a queue:
   this page takes part in its browser's pool (the tasks package has put a pool host in it), so
   that a tool can say why work waits: where it is false, the tasks package is not installed in
   this browser, and the work waits for the person's other machines.
-- `watchWork(repo, key, onChange)` follows the work under the key on the person's queues (own,
-  and every spare, see below), so that a page opened later, or another tab, shows work already
+- `watchWork(repo, key, onChange)` follows the work under the key on the person's queues (own),
+  so that a page opened later, or another tab, shows work already
   going on instead of offering it again. It follows them as they change, makes nothing, and
   always says something within ten seconds: `missing` means no work under this key is known on a
   queue of theirs (no queue, nothing under the key, or own's document not had yet, which it goes
   on looking for). It returns how to stop following.
-- `stopWork(repo, key)` stops the work under the key on own and on every spare this page's Repo
-  holds; false when there is none.
+- `stopWork(repo, key)` stops the work under the key on own, if this page's Repo holds its
+  document; false when there is none.
 
 ```js
 const key = `fetch:${docUrl}`;
@@ -290,40 +290,29 @@ mounts nothing, and the work waits on the queue for the person's other machines.
 Which queues it serves is kept in the account's tool storage for this package
 (`account.toolStorage['tasks-next']`, a document Patchwork's frame makes the first time it is
 needed). Its root is the list: each served queue is a key of its own, the queue's url, holding
-`true`; `own` names one's own queue; and `own:<queueUrl>`, holding
-`true`, marks each queue made to be one's own. With nothing to make before writing, changes made
-at once on devices that have not synced all keep: two joins both stand. `servedOf`, `ownQueueOf`, `marksOf`, `sparesOf`, `setServed` and `ownQueue`
-in `src/task-client.js` are the only code that knows this. To serve a queue, open it in the Task
-Queue Browser and press Join queue; there you can also Leave.
+`true`; and `own` names one's own queue, which is served too. With nothing to make before writing,
+changes made at once on devices that have not synced all keep: two joins both stand. `servedOf`,
+`ownQueueOf`, `setServed` and `ownQueue` in `src/task-client.js` are the only code that knows this.
+To serve a queue, open it in the Task Queue Browser and press Join queue; there you can also Leave.
 
 **One's own queue.** A person always has one: whatever first needs it makes it (a page asking for
 work, the background component as it mounts, the badge as it mounts), and nobody presses
-anything. Making writes, in one change and only where it sees no `own`, the pointer, the new
-queue's mark and its url key, serving it; nothing deletes or rewrites `own` or a
-mark. So every write of `own` is concurrent with every other, and the one that stands is
-Automerge's winner among them, the same on every replica with the same changes. Making waits on
-nothing: it writes in the page's Repo and is done, with no network too. Several copies of the
-client in one page (two builds of this package) on one Repo make one: a making's change
-reads `own` again before it writes. A page whose Repo sees a pointer to a queue whose document it
-does not have yet (made on another device, not yet arrived) makes a queue of its own instead,
-with its mark and url key and no pointer, and uses it until own's document comes; a document
-this browser keeps but is still reading from its storage (a cold start) is waited for, up to
-half a minute, and makes nothing. Every marked
-queue that is not own is a **spare**: it stays served, so what it lists runs whether or not it has
-been moved, and passes **fold** it into own (FOLDING in `src/task-rules.js`): an entry is listed
-in own, or, when own's key names another task that is still wanted, the spare's key comes to name
-that one too, so the spare's task yields to it and its asker follows the key; the entry of a task
-that has ended, or of a document that is no task, leaves the spare. A pass starts with every `ownQueue` call, and the page whose pool host
-follows the account runs one whenever the account or the storage changes and there is a spare.
-Spares are kept for good (see PLANS.md). The frame's provider can also make the storage document
-twice (two devices that both found none); the account then keeps one link, and the pool host
-moves what the losing document lists into the winner (`mergeStorages` in `src/helpers.ts`: its
-marks, its `own` if the winner has none, and its served queues), after which the loser's own is a
-spare like any other. The tool storage comes from the frame's tool-storage provider
+anything. When the storage document names no `own`, `ownQueue` makes the queue and writes `own`
+and the queue's url key (serving it) in one change; nothing rewrites `own` after. Making waits on
+nothing: it writes in the page's Repo and is done, with no network too. Several things in one page
+asking at once share one making, and a making's change reads `own` again before it writes. When
+the storage document names an `own` whose document this Repo does not have yet (made on another
+device, not yet arrived), `ownQueue` waits for the document, up to about half a minute, and makes
+nothing. The tool storage comes from the frame's tool-storage provider
 (`patchwork-tool-storage-provider`, which threepane and the tiling frame mount), asked from the
 element that asks, or else from the first such provider in the page: where none answers within
 five seconds, the badge says "This page has nowhere to keep your task queues, so nothing was
 changed." and nothing is written.
+
+One gap is accepted. Two first uses that have not met (two devices or tabs, offline from each
+other) each make a storage document, or each make an own queue; one wins on every replica, and what
+was written into the other is not seen. This is an open problem for the Automerge team (the
+write-up "Concurrent First Creation"); nothing here repairs it.
 
 What a person sees of it, each read from what is (this page's pool host, the storage document,
 the queue's document, what is heard on the queue's channel), and never starting anything:
@@ -340,8 +329,7 @@ the queue's document, what is heard on the queue's channel), and never starting 
 - **The queue browser** (the Task Queue Browser tool) shows the pools heard serving the queue
   (name, slots, busy, what each has; this browser's marked), a line saying what this browser's
   pool is doing in this page and why, whether this person's browsers serve the queue, whether it
-  is their own ("your queue": made for them, served by their browsers) or a spare ("folded": what
-  it lists moves to their queue), and each
+  is their own ("your queue": made for them, served by their browsers), and each
   listed task: its state (waiting, with what it needs when no pool heard has it; stalled, with
   since when this view has seen it so), its records (which pool took it, when, how it went; a
   stop as a stop), its log, its input (with `keys` hidden), and a Stop while it has not ended.
@@ -420,10 +408,10 @@ Repo, so a host with no network runs the code it has kept.
 
 | When a partition heals | |
 |---|---|
-| Two devices each made a queue | one becomes own everywhere (Automerge's winner among the pointer writes); the other is a spare, folded into it by the next pass; both stay served; no task is lost |
+| Two devices each made a queue | one becomes own everywhere (Automerge's winner among the pointer writes); both stay served, so what either lists runs |
 | A task was listed on both for a while | one list of runs; a second run yields when it hears the first |
 | A run finished while cut off | its record and what it wrote arrive; if another machine took the task meanwhile, its run, still going, gives way once it has the finished run's record, whichever of the two is first in the list, and what it wrote meanwhile is the task code's to guard (as before) |
-| Two devices each had the storage document made | the account keeps one; the pool host moves what the other lists into it, and its own becomes a spare |
+| Two devices each had the storage document made | the account keeps one, and what the other lists is not seen (see One's own queue) |
 
 A task's code imports by bare name with no network as it does online. `probes/browser-run.mjs
 --no-network` shows this with every host name unresolvable: a fresh profile gets its own queue, a
@@ -437,9 +425,8 @@ a second tab that does not hold the pool: its `doWork` through its own site Repo
 first tab's pool, what the task wrote reaches its site Repo, and `watchWork` and `stopWork` work
 from it. The unit tests show the rest: real Repos joined by the pipe, with nothing offered and
 what is asked and written crossing (`pipe.test.ts`); two replicas that each made a queue
-apart agree on own when they meet, lose no task and run none twice; a replica that sees a pointer
-to a queue it does not have asks a queue of its own and folds it into own once own arrives;
-folding with one replica cut off part way, then healed, converges; a run that finished while its
+apart agree on own when they meet, and both queues stay served; a replica that sees a pointer
+to a queue it does not have waits for it and makes none; a run that finished while its
 pool was cut off arrives with what it wrote, and a run another pool took meanwhile gives way to
 it. What none of them shows yet is said at the end of Tests and probes.
 
@@ -621,7 +608,7 @@ Not shown yet, of Offline and partition:
   package. `real-run.mjs` checks it there with the network only.
 - A partition healed through a real sync server. Every "When a partition heals" row is shown by
   unit tests that merge the documents by hand (`task-client.test.ts`, `offline-check.test.ts`,
-  `rules-fold.test.ts`, `merge-storages.test.ts`, and `pool.test.ts` for a run finished while cut
+  and `pool.test.ts` for a run finished while cut
   off). One probe cuts one browser page off and lets it back (`browser-run.mjs --lifetimes`, check
   37); none does so to a Node host, or to two devices that each wrote while apart.
 - A cold start whose storage is slow. `own-load.test.ts` shows own waited for while this browser's
