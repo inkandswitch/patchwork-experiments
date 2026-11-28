@@ -8,7 +8,9 @@
  *
  *   local = {
  *     mode          "full" | "panel"
- *     hasKey        a model key is stored for the session's provider
+ *     hasKey        a model key is stored for the session's provider, or
+ *                   for one that signs in (ChatGPT), this browser is signed in
+ *     signIn        the session's provider takes a sign-in, not a key
  *     keysSettled   the account's LLM settings have answered, or failed to
  *     work          what the queue says of the session's task (runners/ask.js
  *                   followWork: a task view), or null before it has said
@@ -59,8 +61,8 @@ export const HINTS = [
   { name: "outdated", when: (f) => f.outdated || f.version === "newer", says: () => "Waiting for a newer version of the agent: something in this session needs it" },
   // Without the task client this page asks for nothing and follows nothing.
   { name: "no-tasks", when: (f) => !f.tasks, says: () => "This needs the Tasks package, which is not installed here." },
-  { name: "no-key-elsewhere", when: (f) => !f.hasKey && f.work === "elsewhere", says: () => "Working on another device — this browser has no API key" },
-  { name: "no-key", when: (f) => !f.hasKey, says: () => "Add an API key to start" },
+  { name: "no-key-elsewhere", when: (f) => !f.hasKey && f.work === "elsewhere", says: (f) => (f.signIn ? "Working on another device — this browser is not signed in to ChatGPT" : "Working on another device — this browser has no API key") },
+  { name: "no-key", when: (f) => !f.hasKey, says: (f) => (f.signIn ? "Sign in to ChatGPT to start" : "Add an API key to start") },
   { name: "asking", when: (f) => f.asking > 0, says: (f) => (f.asking === 1 ? "Waiting on your answer" : `Waiting on ${f.asking} answers`) },
   { name: "pending", when: (f) => f.pending > 0, says: (f) => `${f.pending} call${f.pending === 1 ? " needs" : "s need"} approval` },
   { name: "page-here", when: (f) => f.pageTool != null, says: (f) => `Running ${f.pageTool} in this page` },
@@ -141,6 +143,7 @@ export function hintFacts(doc, local) {
     version: versionStanding(doc),
     outdated: unknownBlocks(doc).length > 0,
     hasKey: !!local.hasKey,
+    signIn: !!local.signIn,
     tasks: local.tasks !== false,
     work: stopped ? null : workOf(local.work ?? null, local.pool ?? null),
     poolHere: local.poolHere !== false,
@@ -247,6 +250,7 @@ export function sessionValue(doc, local) {
     title: titleLine(doc, local.subjectTitle ?? null),
     cost: costLine(doc.usage),
     model: modelLabel(doc.config),
+    provider: doc.config?.providerId ?? "openrouter",
     workflow: workflowLink(doc, local.workflowTitle ?? null),
     place: local.place ?? null,
     hint: hintOf(facts),

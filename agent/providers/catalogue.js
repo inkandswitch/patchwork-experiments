@@ -46,19 +46,19 @@ export function writeCatalogue(providerId, models, storage = globalThis.localSto
  */
 const infoMemo = new Map()
 
-export async function modelInfo(providerId, modelId, { key = null } = {}) {
+export async function modelInfo(providerId, modelId, { key = null, fetchImpl = undefined } = {}) {
   if (!modelId) return null
   const memoKey = `${providerId}:${modelId}`
   if (infoMemo.has(memoKey)) return infoMemo.get(memoKey)
 
   let info = null
   try {
-    let { models } = await loadCatalogue(providerId, { key })
+    let { models } = await loadCatalogue(providerId, { key, fetchImpl })
     info = models.find((m) => m.id === modelId) ?? null
     // A catalogue cached before `supports` or `efforts` existed has the model
     // but not what this needs; refresh once rather than wait a day for the TTL.
     if (info && (info.supports === undefined || info.efforts === undefined)) {
-      ;({ models } = await loadCatalogue(providerId, { key, force: true }))
+      ;({ models } = await loadCatalogue(providerId, { key, force: true, fetchImpl }))
       info = models.find((m) => m.id === modelId) ?? null
     }
   } catch {
@@ -73,8 +73,11 @@ export function _resetModelInfo() {
   infoMemo.clear()
 }
 
-/** Load the catalogue, from cache when it is fresh enough. */
-export async function loadCatalogue(providerId, { force = false, key = null } = {}) {
+/**
+ * Load the catalogue, from cache when it is fresh enough. `fetchImpl`, when
+ * given, is what the provider asks with (a browser's lane through the relay).
+ */
+export async function loadCatalogue(providerId, { force = false, key = null, fetchImpl = undefined } = {}) {
   const cached = readCatalogue(providerId)
   if (cached && !cached.stale && !force) return { models: cached.models, cached: true }
 
@@ -84,7 +87,7 @@ export async function loadCatalogue(providerId, { force = false, key = null } = 
   }
 
   try {
-    const models = await provider.models({ key })
+    const models = await provider.models(fetchImpl ? { key, fetchImpl } : { key })
     writeCatalogue(providerId, models)
     return { models, cached: false }
   } catch (err) {

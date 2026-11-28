@@ -167,6 +167,30 @@ export function summaryBlock(text, upToTurnId, opts = {}) {
  */
 const frozen = (text) => new ImmutableString(String(text))
 
+/**
+ * What a provider asks to have back, exactly as it gave it, the next time this
+ * reply is sent: OpenAI's encrypted reasoning and message phases
+ * (providers/chatgpt.js). Kept on the reply's turn, not as a block: it shows
+ * nothing, and a version of the agent that does not know it sends the turn
+ * from its blocks as before. Only the provider that wrote it reads it, and
+ * only while it still describes the turn (chatgpt.js carryFits). Frozen, as
+ * a result's output is: it is one opaque string, never edited.
+ */
+export function carryOf(providerId, data) {
+  return { provider: String(providerId), data: frozen(JSON.stringify(data)) }
+}
+
+/** A turn's carry as its provider reads it, or null when there is none or it does not parse. */
+export function readCarry(turn) {
+  const carry = turn?.carry
+  if (!carry?.provider || carry.data == null) return null
+  try {
+    return { provider: String(carry.provider), data: JSON.parse(String(carry.data)) }
+  } catch {
+    return null
+  }
+}
+
 export function resultBlock(callId, output, opts = {}) {
   return {
     type: "result",

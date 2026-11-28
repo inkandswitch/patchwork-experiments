@@ -56,6 +56,30 @@ beforeEach(() => {
   delete globalThis.patchworkTasks
 })
 
+describe("switching provider from the header", () => {
+  it("moves the session to the other provider in one step, keeps each one's model, and opens settings when this browser cannot run it", async () => {
+    localStorage.setItem("patchwork-agent:key:openrouter", "sk-or-test")
+    const handle = fakeHandle({ config: { providerId: "openrouter", model: "lab/thinker" } })
+    const { element, cleanup } = mount(handle)
+    const select = element.querySelector("select.agent-provider-switch")
+    expect([...select.options].map((o) => [o.value, o.textContent])).toEqual([["openrouter", "OpenRouter"], ["chatgpt", "ChatGPT plan"]])
+    expect(select.value).toBe("openrouter")
+
+    select.value = "chatgpt"
+    select.dispatchEvent(new Event("change"))
+    expect([handle.doc().config.providerId, handle.doc().config.model]).toEqual(["chatgpt", "gpt-6.2-sol"])
+    // Not signed in here: the settings open on the sign-in.
+    const dialog = element.querySelector("dialog.agent-settings")
+    expect(dialog.open || dialog.hasAttribute("open")).toBe(true)
+    await vi.waitFor(() => expect(element.querySelector(".agent-model").textContent).toBe("gpt-6.2-sol"))
+
+    select.value = "openrouter"
+    select.dispatchEvent(new Event("change"))
+    expect(handle.doc().config.model).toBe("lab/thinker")
+    cleanup()
+  })
+})
+
 describe("the render contract", () => {
   it("mounts a root, a transcript and a composer", () => {
     const { element, cleanup } = mount(fakeHandle())

@@ -36,7 +36,7 @@ import { loadPluginTools, packageOf } from "../assembly/plugins.js"
 import { getProvider } from "../providers/index.js"
 import { modelInfo } from "../providers/catalogue.js"
 import { guardedFetch, SYNC_SERVERS } from "../net/guard.js"
-import { relayFetch } from "../net/relay.js"
+import { relayFetch, laneFetch, throughRelay } from "../net/relay.js"
 import { braveSearch } from "../tools/web.js"
 import { Automerge } from "../host/modules.js"
 import { taskClient, tryHostImport } from "../host/import.js"
@@ -72,6 +72,15 @@ export function rebased(provider, base) {
   const to = String(base).replace(/\/+$/, "")
   const send = (url, init) => fetch(String(url).replace(/^https?:\/\/[^/]+/, to), init)
   return { ...provider, stream: (request) => provider.stream({ ...request, fetchImpl: send }) }
+}
+
+/**
+ * The provider as this host must reach it: in a browser's run worker, the
+ * model APIs that answer no page go through the person's relay (net/relay.js
+ * API_LANES); Node reaches them directly.
+ */
+export function laned(provider, relay, node = inNode()) {
+  return node ? provider : throughRelay(provider, relay)
 }
 
 /** The ids of a task's runs, read from its document with the rules' reader; a stop is no run. */
@@ -117,10 +126,10 @@ export default async function sessionTask(input, ctx) {
     session: input.session,
     heads: Array.isArray(input.heads) ? input.heads : null,
     taskRuns: () => runsOfTask(ctx.repo, ctx.taskUrl),
-    getProvider: async () => rebased(getProvider(providerId()), providerUrl),
+    getProvider: async () => (providerUrl ? rebased(getProvider(providerId()), providerUrl) : laned(getProvider(providerId()), keys.relay)),
     key: keys.model,
     // The catalogue the stand-in cannot answer is not asked for.
-    getModelInfo: providerUrl ? undefined : (model, id) => modelInfo(id ?? providerId(), model, { key: keys.model }),
+    getModelInfo: providerUrl ? undefined : (model, id) => modelInfo(id ?? providerId(), model, { key: keys.model, fetchImpl: inNode() ? undefined : laneFetch({ fetch: (url, init) => fetch(url, init), relay: keys.relay }) }),
     context,
     builtins: AGENT.builtins,
     plugins: () => loadPluginTools({ onError: (id, why) => ctx.log?.(`left out ${id}: ${why}`) }),

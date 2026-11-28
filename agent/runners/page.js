@@ -72,7 +72,7 @@ import { AGENT } from "../assembly/agent.js"
 import { BUILTIN_TOOLS } from "../assembly/builtin.js"
 import { loadPluginTools, packageOf } from "../assembly/plugins.js"
 import { ensureDriver, getDriver, letGo, sessionHolder } from "../workflow/driver.js"
-import { readKey, readRelay, SEARCH_KEY_ID } from "../providers/keys.js"
+import { readKey, readRelay, freshCredential, refuseCredential, SEARCH_KEY_ID } from "../providers/keys.js"
 import { relayFetch } from "../net/relay.js"
 import { guardedFetch, SYNC_SERVERS, pageOriginFetch } from "../net/guard.js"
 import { hostImport, taskClient, clientHere, _holdClient } from "../host/import.js"
@@ -248,18 +248,52 @@ export async function askFor(repo, sessionUrl, opts = {}) {
     if (outdated(doc)) return { asked: false, why: "another version's session" }
     // askWork's first rule first: most looks find nothing to do.
     if (!needsWork(doc, (where) => where === WHERE.worker, doc.burst?.run ?? null)) return { asked: false, why: "no work" }
-    const model = readKey(doc.config?.providerId ?? "openrouter")
+    // A sign-in's token is renewed here, by the page, so a run is handed one
+    // with time in it; one that runs out mid-run ends the run, and this asks
+    // again (providers/chatgpt.js renewal).
+    const providerId = doc.config?.providerId ?? "openrouter"
+    let model
+    try {
+      model = await freshCredential(providerId)
+    } catch (err) {
+      // Renewing could not reach OpenAI (a fault, not the network going):
+      // nothing else would ask again, so this does, once, a little later.
+      if (err?.interruption) askLater(repo, sessionUrl)
+      return { asked: false, why: err?.interruption ? String(err.message) : "no key" }
+    }
     if (!model) return { asked: false, why: "no key" }
-    return await asker(repo, sessionUrl, {
+    const asked = await asker(repo, sessionUrl, {
       ...opts,
       // When the task it follows ends, or the network is back, it asks again this way: with the keys.
       reask: () => askFor(repo, sessionUrl),
       account: accountContext(),
       keys: { model, search: readKey(SEARCH_KEY_ID) ?? null, relay: readRelay() },
     })
+    // The run ended for a fresh token (providers/chatgpt.js renewal): this
+    // one is never handed out again, whatever this page's clock says of it.
+    if (asked?.outcome === "reconnecting") refuseCredential(providerId, model)
+    return asked
   } catch (err) {
     return { asked: false, why: String(err?.message ?? err), error: true }
   }
+}
+
+/** How long after a renewal that could not reach OpenAI this page asks again. */
+export const RENEW_RETRY_MS = 30_000
+
+/** sessionUrl -> timer: one pending retry per session. */
+const later = new Map()
+
+function askLater(repo, sessionUrl) {
+  const key = bare(sessionUrl)
+  if (later.has(key)) return
+  later.set(
+    key,
+    setTimeout(() => {
+      later.delete(key)
+      askFor(repo, sessionUrl).catch(() => {})
+    }, RENEW_RETRY_MS)
+  )
 }
 
 /** Follow what the queue says of a session's task (runners/ask.js followWork), once this page has the task client. Returns how to stop. */

@@ -21,7 +21,7 @@ import { STOP, stopOf, stoppedFromOutside } from "../session/status.js"
 import { askOf, covered, needsApproval, ownGrant } from "../session/grants.js"
 import { addUsage, costOf, dollars } from "../session/usage.js"
 import { resultsToKeepWhole, pinResult, rejectSentImages, toRequest, estimateTokens, DENIED_RESULT } from "../session/request.js"
-import { makeTurn, textBlock, contextBlock, reasoningBlock, callBlock, resultBlock, summaryBlock, attachmentBlock, noticeBlock } from "../session/blocks.js"
+import { makeTurn, textBlock, contextBlock, reasoningBlock, callBlock, resultBlock, summaryBlock, attachmentBlock, noticeBlock, carryOf } from "../session/blocks.js"
 import { unansweredCalls, callsAwaitingApproval, questionsAwaitingAnswer, runnableCalls, findCall, findResult, move, results as landed } from "../session/calls.js"
 import { recordArtifact } from "../session/made.js"
 import { markReconnecting, speak } from "../session/recovery.js"
@@ -569,6 +569,8 @@ async function streamTurn(opts) {
 
   const appender = batchedAppender(store, flushMs)
   const calls = []
+  // What the provider asks to have back with this reply (session/blocks.js carryOf).
+  let carry = null
   let textPath = null
   let reasoningPath = null
   let stopReason = "end"
@@ -650,6 +652,8 @@ async function streamTurn(opts) {
         watch(event.delta)
       } else if (event.type === "call") {
         calls.push(event)
+      } else if (event.type === "carry") {
+        carry = event.data ?? null
       } else if (event.type === "usage") {
         const priced = { ...event, ...costOf(event, opts.prices) }
         store.change((d) => addUsage(d, priced))
@@ -689,6 +693,8 @@ async function streamTurn(opts) {
         if (!mark || !mine(mark)) return
         const at = ["turns", d.turns.findIndex((x) => x.id === turn.id)]
         for (const { path, text } of left) if (text) store.appendTextIn(d, [...at, "blocks", path.blockIndex, "text"], text)
+        // Only with a reply this run saw end: half a reply has nothing to replay.
+        if (carry && saw && provider?.id) t.carry = carryOf(provider.id, carry)
         delete t.streaming
       })
     }
@@ -963,7 +969,9 @@ function reconnect(store, err, emit) {
   const reason = String(err?.message ?? err ?? "the network went away")
   store.change((d) => markReconnecting(d, reason))
   emit?.({ type: "finish", outcome: OUTCOME.reconnecting, reason })
-  return { outcome: OUTCOME.reconnecting, reason }
+  // `renew`: what ran out is the credential the run was handed, not the
+  // network; waiting will not bring a new one, asking again will (kernel/burst.js).
+  return err?.renew ? { outcome: OUTCOME.reconnecting, reason, renew: true } : { outcome: OUTCOME.reconnecting, reason }
 }
 
 /** Ask the model to go on, as the harness: a notice in a user-role turn (session/blocks.js). */

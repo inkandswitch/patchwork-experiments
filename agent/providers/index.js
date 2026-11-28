@@ -17,8 +17,9 @@
  */
 
 import openrouter from "./openrouter.js"
+import chatgpt from "./chatgpt.js"
 
-const registry = new Map([[openrouter.id, openrouter]])
+const registry = new Map([openrouter, chatgpt].map((provider) => [provider.id, provider]))
 
 export function register(provider) {
   registry.set(provider.id, provider)
@@ -32,5 +33,11 @@ export function getProvider(providerId) {
 }
 
 export function listProviders() {
-  return [...registry.values()].map((p) => ({ id: p.id, name: p.name }))
+  return [...registry.values()].map((p) => ({ id: p.id, name: p.name, signIn: !!p.signIn }))
+}
+
+/** The model a session on this provider starts with, and each workflow tier's. */
+export function defaultsOf(providerId) {
+  const provider = registry.get(providerId)
+  return { model: provider?.DEFAULT_MODEL ?? null, tiers: provider?.TIER_MODELS ?? null }
 }

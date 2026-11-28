@@ -14,7 +14,7 @@ a `lease`; nothing reads it. There is no `status` field (*Status*).
 | `schemaVersion` | the shape the document is in (`session/schema.js` `versionStanding`). A burst leaves a session of another version alone and its view says why; the sidebar and the floating box, which each keep one session, start a new one in place of one from an earlier version |
 | `title` | `string \| null`. Null until named: a view shows a title derived from the first message |
 | `subject` | the document the session is about, or null |
-| `config` | `{ providerId, model, params, workflows: { enabled, tiers?, parallel?, steps?, cost? }, budget?, skillsFolderUrl? }`. `workflows` is what the settings panel sets for the plans it starts. `budget` is dollars; most sessions have none, a workflow step always does. `skillsFolderUrl` is read, and nothing in the agent writes it |
+| `config` | `{ providerId, model, models?, params, workflows: { enabled, tiers?, parallel?, steps?, cost? }, budget?, skillsFolderUrl? }`. `models` keeps each provider's last model, for switching back. `workflows` is what the settings panel sets for the plans it starts. `budget` is dollars; most sessions have none, a workflow step always does. `skillsFolderUrl` is read, and nothing in the agent writes it |
 | `turns` | `Turn[]`, the transcript |
 | `burst` | `{ run } \| null`: the run working on it, or a page's claim on a call only a page runs (*The burst mark*) |
 | `reconnecting` | `{ reason, since, attempts } \| null`, while its run waits for the network: set from the first request the network refuses, and kept through every try. Cleared when a request gets through, when the burst ends (not when its pool hands it on), and by any stop |
@@ -30,12 +30,12 @@ a `lease`; nothing reads it. There is no `status` field (*Status*).
 
 ## Turns and blocks
 
-    Turn = { id, role: "user" | "assistant" | "tool", at, author, blocks, streaming? }
+    Turn = { id, role: "user" | "assistant" | "tool", at, author, blocks, streaming?, carry? }
 
 `streaming: { runner }` marks a reply still being written, naming its run, and
 is removed when the stream ends. It is written when the model first answers, after the last turn its
 request was built from: a request that never gets through writes none. A reply marked by a run that
-`burst` does not name was cut off: the next run takes it out and asks again. Every block has an `id`.
+`burst` does not name was cut off: the next run takes it out and asks again. Every block has an `id`. `carry: { provider, data }` is what a provider asked to have back with a whole reply, `data` one frozen JSON string (`session/blocks.js` `carryOf`); only that provider reads it, and only while it matches the turn's text and calls.
 
 | block | fields | |
 |---|---|---|

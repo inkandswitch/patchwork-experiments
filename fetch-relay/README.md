@@ -16,6 +16,21 @@ GET <relay>/fetch?url=<target>      (and HEAD)
   x-relay-error       only when the relay itself refused or failed
 ```
 
+It also has fixed lanes to model APIs that answer no page at all — today
+ChatGPT's plan route, whose replies carry no CORS headers:
+
+```
+POST <relay>/openai/v1/responses    → https://api.openai.com/v1/responses
+GET  <relay>/openai/v1/models       → https://api.openai.com/v1/models
+```
+
+A lane goes only to its one address, with its one method: nothing in the
+request picks the target. It passes on `authorization` (the person's ChatGPT
+token), `content-type` and `accept` to that address alone, and streams the
+answer back as it arrives, since a reply runs for minutes. The relay sees
+the token in passing, so run your own. `LANES` in `relay.js`; the agent's
+`net/relay.js` has the same table.
+
 ## Running it
 
 As a Cloudflare Worker:
@@ -55,7 +70,7 @@ every redirect, which the relay follows itself:
   address), nor a name that resolves to one (in the Node server; a Worker
   cannot reach private addresses anyway);
 - fetch a path that names an automerge document;
-- send anything but GET or HEAD, or forward cookies, credentials or any
+- (off a lane) send anything but GET or HEAD, or forward cookies, credentials or any
   request header beyond `accept`, `accept-language`, `range` and the
   conditional ones — save one: Brave Search's key (`x-subscription-token`),
   passed to `api.search.brave.com` and nowhere else, redirects included, so

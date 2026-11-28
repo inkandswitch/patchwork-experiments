@@ -3,7 +3,7 @@
  * form, with old results tapered and images and files limited.
  */
 
-import { describeContext, describeEvent, describeNotice } from "./blocks.js"
+import { describeContext, describeEvent, describeNotice, readCarry } from "./blocks.js"
 import { isInterruptedResult } from "./recovery.js"
 
 /**
@@ -286,7 +286,8 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
     }
 
     if (!content.length) continue
-    messages.push({ role: turn.role, content })
+    const carry = turn.role === "assistant" ? readCarry(turn) : null
+    messages.push(carry ? { role: turn.role, content, carry } : { role: turn.role, content })
   }
 
   return { system, messages: resultsAfterTheirCalls(messages) }
